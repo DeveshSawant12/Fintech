@@ -8,8 +8,12 @@ import {
   Phone,
   MapPin,
 } from "lucide-react";
+import { useLanguage } from "../LanguageContext";
 
 export function Footer() {
+  const { t } = useLanguage();
+  const footer = t.footer;
+
   return (
     <footer className="relative z-20 bg-[#0f172a] text-gray-300">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -20,19 +24,23 @@ export function Footer() {
               to="/"
               className="flex items-center space-x-3 mb-4"
             >
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#1A5F3D] to-[#3FAF7D] flex items-center justify-center shadow-lg">
-                <span className="text-white font-bold text-xl">
-                  SF
-                </span>
+              <div className="relative w-6 h-6">
+                <span className="absolute left-0 top-0 h-1 w-6 rounded-full bg-[#B8E55C]" />
+                <span className="absolute left-1 top-2 h-1 w-4 rounded-full bg-[#8EDB63]" />
+                <span className="absolute left-2 top-4 h-1 w-3 rounded-full bg-[#52C56B]" />
+                <span className="absolute left-0 top-2 h-1 w-1 rounded-full bg-[#8EDB63]" />
+                <span className="absolute left-0 top-4 h-1 w-1 rounded-full bg-[#52C56B]" />
+                <span className="absolute left-0 top-6 h-1 w-1 rounded-full bg-[#2FAE5F]" />
               </div>
-              <span className="font-bold text-xl text-white">
-                SmartFinance
+
+              <span className="text-[20px] font-semibold tracking-[-0.02em] leading-none">
+                <span className="text-white">Fin</span>
+                <span className="text-[#9DDB63]">Tech</span>
               </span>
             </Link>
 
             <p className="text-sm text-gray-400 mb-5 leading-6">
-              Your trusted partner for smart financial planning
-              and investment solutions.
+              {footer.description}
             </p>
 
             <div className="flex space-x-3">
@@ -62,29 +70,33 @@ export function Footer() {
           {/* Quick Links */}
           <div>
             <h3 className="font-semibold text-white mb-4">
-              Quick Links
+              {footer.quickLinks}
             </h3>
             <ul className="space-y-3">
-              <FooterLink to="/">Home</FooterLink>
-              <FooterLink to="/services">Services</FooterLink>
-              <FooterLink to="/planner">
-                Financial Planner
+              <FooterLink to="/">{footer.home}</FooterLink>
+              <FooterLink to="/services">
+                {footer.services}
               </FooterLink>
-              <FooterLink to="/webinars">Webinars</FooterLink>
+              <FooterLink to="/planner">
+                {footer.planner}
+              </FooterLink>
+              <FooterLink to="/webinars">
+                {footer.webinars}
+              </FooterLink>
             </ul>
           </div>
 
           {/* Calculators */}
           <div>
             <h3 className="font-semibold text-white mb-4">
-              Calculators
+              {footer.calculators}
             </h3>
             <ul className="space-y-3">
               <FooterLink to="/calculator/sip">
-                SIP Calculator
+                {footer.sip}
               </FooterLink>
               <FooterLink to="/calculator/lumpsum">
-                Lumpsum Calculator
+                {footer.lumpsum}
               </FooterLink>
             </ul>
           </div>
@@ -92,13 +104,13 @@ export function Footer() {
           {/* Contact Info */}
           <div>
             <h3 className="font-semibold text-white mb-4">
-              Contact Us
+              {footer.contact}
             </h3>
             <ul className="space-y-4">
               <li className="flex items-start space-x-3 text-sm">
                 <Mail className="w-5 h-5 flex-shrink-0 mt-0.5 text-[#3FAF7D]" />
                 <a
-                  href="magadumsandip@gmail.com"
+                  href="mailto:magadumsandip@gmail.com"
                   className="hover:text-white transition-colors"
                 >
                   magadumsandip@gmail.com
@@ -132,7 +144,7 @@ export function Footer() {
         </div>
 
         <div className="border-t border-white/10 mt-10 pt-6 text-center text-sm text-gray-400">
-          <p>© 2026 SmartFinance. All rights reserved.</p>
+          <p>{footer.copyright}</p>
         </div>
       </div>
     </footer>
