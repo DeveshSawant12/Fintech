@@ -53,7 +53,7 @@ export function Home() {
               </div>
 
               <h1 className="text-5xl md:text-6xl xl:text-7xl font-bold tracking-tight text-white leading-[1.05] mb-6 max-w-3xl">
-                Smart Financial Planning for a{" "}
+                Smar Financial Planning for a{" "}
                 <span className="bg-gradient-to-r from-[#B8E986] via-[#DDF8A8] to-white bg-clip-text text-transparent">
                   Stronger Future
                 </span>
