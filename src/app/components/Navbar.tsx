@@ -2,18 +2,24 @@ import { Link, useLocation } from "react-router";
 import { Menu, X, ChevronDown, Globe } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import { useLanguage } from "../LanguageContext";
 
 export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [calculatorsOpen, setCalculatorsOpen] = useState(false);
   const [languageOpen, setLanguageOpen] = useState(false);
-  const [selectedLanguage, setSelectedLanguage] =
-    useState("English");
   const [isScrolled, setIsScrolled] = useState(false);
+
+  const { language, setLanguage, t, languageOptions } =
+    useLanguage();
 
   const location = useLocation();
   const calculatorsRef = useRef<HTMLDivElement>(null);
   const languageRef = useRef<HTMLDivElement>(null);
+
+  const selectedLanguageLabel =
+    languageOptions.find((item) => item.code === language)
+      ?.label ?? "English";
 
   const isActive = (path: string) => location.pathname === path;
   const calculatorsActive =
@@ -80,20 +86,17 @@ export function Navbar() {
             {/* Logo */}
             <Link
               to="/"
-              className="flex items-center gap-3 rounded-full px-2 py-1.5"
+              className="flex items-center gap-2 rounded-full px-2 py-1"
             >
-              {/* Icon */}
-              <div className="relative w-7 h-7">
+              <div className="relative w-6 h-6">
                 <span className="absolute left-0 top-0 h-1 w-6 rounded-full bg-[#B8E55C]" />
                 <span className="absolute left-1 top-2 h-1 w-4 rounded-full bg-[#8EDB63]" />
                 <span className="absolute left-2 top-4 h-1 w-3 rounded-full bg-[#52C56B]" />
-
                 <span className="absolute left-0 top-2 h-1 w-1 rounded-full bg-[#8EDB63]" />
                 <span className="absolute left-0 top-4 h-1 w-1 rounded-full bg-[#52C56B]" />
                 <span className="absolute left-0 top-6 h-1 w-1 rounded-full bg-[#2FAE5F]" />
               </div>
 
-              {/* Text */}
               <span className="text-[20px] font-semibold tracking-[-0.02em] leading-none">
                 <span className="text-white">Fin</span>
                 <span className="text-[#9DDB63]">Tech</span>
@@ -103,14 +106,14 @@ export function Navbar() {
             {/* Desktop Menu */}
             <div className="flex items-center gap-1">
               <NavLink to="/" active={isActive("/")}>
-                Home
+                {t.navbar.home}
               </NavLink>
 
               <NavLink
                 to="/services"
                 active={isActive("/services")}
               >
-                Services
+                {t.navbar.services}
               </NavLink>
 
               {/* Calculators Dropdown */}
@@ -126,7 +129,7 @@ export function Navbar() {
                       : "text-white/75 hover:text-white hover:bg-white/8"
                   }`}
                 >
-                  <span>Calculators</span>
+                  <span>{t.navbar.calculators}</span>
                   <ChevronDown
                     className={`w-4 h-4 transition-transform ${
                       calculatorsOpen ? "rotate-180" : ""
@@ -154,7 +157,7 @@ export function Navbar() {
                           setCalculatorsOpen(false)
                         }
                       >
-                        SIP Calculator
+                        {t.navbar.sipCalculator}
                       </Link>
                       <Link
                         to="/calculator/lumpsum"
@@ -163,7 +166,7 @@ export function Navbar() {
                           setCalculatorsOpen(false)
                         }
                       >
-                        Lumpsum Calculator
+                        {t.navbar.lumpsumCalculator}
                       </Link>
                     </motion.div>
                   )}
@@ -174,20 +177,19 @@ export function Navbar() {
                 to="/planner"
                 active={isActive("/planner")}
               >
-                Planner
+                {t.navbar.planner}
               </NavLink>
 
               <NavLink
                 to="/webinars"
                 active={isActive("/webinars")}
               >
-                Webinars
+                {t.navbar.webinars}
               </NavLink>
             </div>
 
             {/* Desktop CTA + Language */}
             <div className="flex items-center gap-2 ml-1">
-              {/* Language Dropdown */}
               <div className="relative" ref={languageRef}>
                 <button
                   type="button"
@@ -198,7 +200,7 @@ export function Navbar() {
                 >
                   <span className="inline-flex items-center gap-2">
                     <Globe className="w-4 h-4" />
-                    <span>{selectedLanguage}</span>
+                    <span>{selectedLanguageLabel}</span>
                   </span>
                   <ChevronDown
                     className={`w-4 h-4 transition-transform ${
@@ -220,26 +222,21 @@ export function Navbar() {
                       transition={{ duration: 0.18 }}
                       className="absolute z-[100] top-full right-0 mt-3 w-52 rounded-2xl border border-[#1d3b30] bg-[#0f172a]/96 backdrop-blur-2xl shadow-[0_18px_45px_rgba(0,0,0,0.38)] overflow-hidden"
                     >
-                      {[
-                        "English",
-                        "हिन्दी",
-                        "मराठी",
-                        "ಕನ್ನಡ",
-                      ].map((lang) => (
+                      {languageOptions.map((lang) => (
                         <button
-                          key={lang}
+                          key={lang.code}
                           type="button"
                           onClick={() => {
-                            setSelectedLanguage(lang);
+                            setLanguage(lang.code);
                             setLanguageOpen(false);
                           }}
                           className={`w-full text-left px-5 py-3.5 text-[15px] font-medium transition-colors ${
-                            selectedLanguage === lang
+                            language === lang.code
                               ? "text-white bg-white/10"
                               : "text-white/90 hover:text-white hover:bg-white/8"
                           }`}
                         >
-                          {lang}
+                          {lang.label}
                         </button>
                       ))}
                     </motion.div>
@@ -251,19 +248,20 @@ export function Navbar() {
                 to="/login"
                 className="px-4 py-2 rounded-full text-sm text-white/75 hover:text-white hover:bg-white/8 transition-all"
               >
-                Login
+                {t.navbar.login}
               </Link>
 
               <Link
                 to="/signup"
                 className="px-5 py-2 rounded-full bg-[#D8F46B] text-black text-sm font-semibold shadow-[0_8px_25px_rgba(184,233,134,0.35)] hover:scale-[1.03] transition-all"
               >
-                Get Started
+                {t.navbar.getStarted}
               </Link>
             </div>
           </div>
         </nav>
       </div>
+
       {/* Mobile Navbar */}
       <nav
         className={`md:hidden sticky top-0 z-50 border-b border-white/10 backdrop-blur-xl transition-all duration-300 ${
@@ -274,15 +272,19 @@ export function Navbar() {
           <div className="flex justify-between items-center h-16">
             <Link
               to="/"
-              className="flex items-center space-x-2"
+              className="flex items-center gap-2"
             >
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#1A5F3D] to-[#3FAF7D] flex items-center justify-center">
-                <span className="text-white font-bold text-xl">
-                  SF
-                </span>
+              <div className="relative w-6 h-6">
+                <span className="absolute left-0 top-0 h-1 w-6 rounded-full bg-[#B8E55C]" />
+                <span className="absolute left-1 top-2 h-1 w-4 rounded-full bg-[#8EDB63]" />
+                <span className="absolute left-2 top-4 h-1 w-3 rounded-full bg-[#52C56B]" />
+                <span className="absolute left-0 top-2 h-1 w-1 rounded-full bg-[#8EDB63]" />
+                <span className="absolute left-0 top-4 h-1 w-1 rounded-full bg-[#52C56B]" />
+                <span className="absolute left-0 top-6 h-1 w-1 rounded-full bg-[#2FAE5F]" />
               </div>
-              <span className="font-bold text-xl text-white">
-                SmartFinance
+              <span className="text-[20px] font-semibold tracking-[-0.02em] leading-none">
+                <span className="text-white">Fin</span>
+                <span className="text-[#9DDB63]">Tech</span>
               </span>
             </Link>
 
@@ -313,70 +315,63 @@ export function Navbar() {
                   to="/"
                   onClick={() => setMobileMenuOpen(false)}
                 >
-                  Home
+                  {t.navbar.home}
                 </MobileNavLink>
 
                 <MobileNavLink
                   to="/services"
                   onClick={() => setMobileMenuOpen(false)}
                 >
-                  Services
+                  {t.navbar.services}
                 </MobileNavLink>
 
                 <MobileNavLink
                   to="/calculator/sip"
                   onClick={() => setMobileMenuOpen(false)}
                 >
-                  SIP Calculator
+                  {t.navbar.sipCalculator}
                 </MobileNavLink>
 
                 <MobileNavLink
                   to="/calculator/lumpsum"
                   onClick={() => setMobileMenuOpen(false)}
                 >
-                  Lumpsum Calculator
+                  {t.navbar.lumpsumCalculator}
                 </MobileNavLink>
 
                 <MobileNavLink
                   to="/planner"
                   onClick={() => setMobileMenuOpen(false)}
                 >
-                  Planner
+                  {t.navbar.planner}
                 </MobileNavLink>
 
                 <MobileNavLink
                   to="/webinars"
                   onClick={() => setMobileMenuOpen(false)}
                 >
-                  Webinars
+                  {t.navbar.webinars}
                 </MobileNavLink>
 
                 {/* Mobile Language */}
                 <div className="pt-3">
                   <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-[0.18em] text-white/45">
-                    Language
+                    {t.navbar.language}
                   </p>
 
                   <div className="grid grid-cols-2 gap-2">
-                    {[
-                      "English",
-                      "हिन्दी",
-                      "मराठी",
-                      "ಕನ್ನಡ",
-                    ].map((lang) => (
+                    {languageOptions.map((lang) => (
                       <button
-                        key={lang}
+                        key={lang.code}
                         type="button"
-                        onClick={() =>
-                          setSelectedLanguage(lang)
-                        }
+                        onClick={() => setLanguage(lang.code)}
                         className={`px-4 py-3 rounded-xl text-sm transition-all ${
-                          selectedLanguage === lang
+                          language === lang.code
                             ? "bg-white/12 text-white border border-white/15"
                             : "bg-white/5 text-white/80 border border-white/10"
                         }`}
                       >
-                        {lang}
+                        {lang.label}
                       </button>
                     ))}
                   </div>
@@ -388,7 +383,7 @@ export function Navbar() {
                     className="block w-full px-4 py-3 text-center border border-white/15 text-white rounded-xl bg-white/5"
                     onClick={() => setMobileMenuOpen(false)}
                   >
-                    Login
+                    {t.navbar.login}
                   </Link>
 
                   <Link
@@ -396,7 +391,7 @@ export function Navbar() {
                     className="block w-full px-4 py-3 text-center bg-[#D8F46B] text-black rounded-xl font-semibold"
                     onClick={() => setMobileMenuOpen(false)}
                   >
-                    Get Started
+                    {t.navbar.getStarted}
                   </Link>
                 </div>
               </div>
