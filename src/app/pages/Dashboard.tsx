@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { Home, TrendingUp, Calculator, FileText, Video, Settings, LogOut, Menu, X, Wallet, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { motion, AnimatePresence } from "motion/react";
+import { useAuth } from "../auth/AuthContext";
 
 const investmentData = [
   { month: "Jan", value: 100000 },
@@ -23,6 +24,17 @@ const allocationData = [
 export function Dashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' && window.innerWidth >= 768);
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  function handleLogout() {
+    logout();
+    navigate("/login", { replace: true });
+  }
+
+  const displayName  = user?.name  ?? "User";
+  const displayEmail = user?.email ?? "";
+  const initials     = displayName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
 
   return (
     <div className="min-h-screen bg-[#F7F9FB] flex">
@@ -62,7 +74,13 @@ export function Dashboard() {
 
               <div className="mt-auto pt-8 border-t border-gray-200 space-y-2">
                 <SidebarLink icon={<Settings className="w-5 h-5" />} label="Settings" />
-                <SidebarLink icon={<LogOut className="w-5 h-5" />} label="Logout" to="/login" />
+                <button
+                  onClick={handleLogout}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition-all"
+                >
+                  <LogOut className="w-5 h-5" />
+                  Logout
+                </button>
               </div>
             </div>
           </motion.aside>
@@ -83,13 +101,17 @@ export function Dashboard() {
               </button>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-                <p className="text-sm text-gray-600">Welcome back, Rajesh!</p>
+                <p className="text-sm text-gray-600">Welcome back, {displayName.split(" ")[0]}!</p>
               </div>
             </div>
             
             <div className="flex items-center space-x-4">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#1A5F3D] to-[#3FAF7D] flex items-center justify-center text-white font-semibold">
-                RK
+              <div className="text-right hidden sm:block">
+                <p className="text-xs font-semibold text-gray-900">{displayName}</p>
+                <p className="text-xs text-gray-400">{displayEmail}</p>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#1A5F3D] to-[#3FAF7D] flex items-center justify-center text-white font-semibold text-sm">
+                {initials}
               </div>
             </div>
           </div>
