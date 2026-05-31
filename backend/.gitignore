@@ -1,4 +1,4 @@
-# ── Secrets — NEVER commit real env files ─────────────────────────────────────
+`# ── Secrets — NEVER commit real env files ─────────────────────────────────────
 .env
 .env.local
 .env.*.local
