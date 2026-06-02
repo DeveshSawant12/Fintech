@@ -18,6 +18,7 @@ export default defineConfig({
   // The frontend .env still needs: VITE_API_URL=/api  (no host, no port)
   server: {
     port: 5173,
+    strictPort: true, 
     proxy: {
       '/api': {
         target: 'http://localhost:5000',

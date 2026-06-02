@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "../auth/AuthContext";
+import { authAPI } from "../services/api";
 import {
   loginWithCredentials,
   verifyOTP,
@@ -18,35 +19,40 @@ import {
 } from "../auth/authService";
 
 type LoginPhase = "credentials" | "otp" | "success";
+type ForgotPhase = "idle" | "enter-email" | "sent";
 
 export function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  // Fix: use setUser (not setSession) from the new AuthContext
   const { setUser } = useAuth();
 
   const from = (location.state as { from?: string })?.from ?? "/dashboard";
 
-  const [email,    setEmail]   = useState("");
+  const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
-  const [showPw,   setShowPw]  = useState(false);
-  const [otp,      setOTP]     = useState(["", "", "", "", "", ""]);
+  const [showPw,   setShowPw]   = useState(false);
+  const [otp,      setOTP]      = useState(["", "", "", "", "", ""]);
 
   const [phase,      setPhase]      = useState<LoginPhase>("credentials");
   const [loading,    setLoading]    = useState(false);
   const [error,      setError]      = useState<string | null>(null);
   const [success,    setSuccess]    = useState<string | null>(null);
-  const [forgotMode, setForgotMode] = useState(false);
   const [otpError,   setOtpError]   = useState<string | null>(null);
   const [emailErr,   setEmailErr]   = useState<string | null>(null);
   const [pwErr,      setPwErr]      = useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = useState(0);
 
+  // ── Forgot password state ─────────────────────────────────────────────────
+  const [forgotPhase,    setForgotPhase]    = useState<ForgotPhase>("idle");
+  const [forgotEmail,    setForgotEmail]    = useState("");
+  const [forgotEmailErr, setForgotEmailErr] = useState<string | null>(null);
+  const [forgotLoading,  setForgotLoading]  = useState(false);
+  const [forgotError,    setForgotError]    = useState<string | null>(null);
+
   const cooldownRef  = useRef<ReturnType<typeof setInterval> | null>(null);
   const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  // Jump straight to OTP step when coming from Signup
   useEffect(() => {
     const preEmail = searchParams.get("email");
     const verify   = searchParams.get("verify");
@@ -76,7 +82,6 @@ export function Login() {
     }, 1000);
   }
 
-  // ── Step 1: Credentials ───────────────────────────────────────────────────
   async function handleCredentialSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -100,7 +105,6 @@ export function Login() {
     }
   }
 
-  // ── Step 2: OTP ───────────────────────────────────────────────────────────
   function handleOTPChange(index: number, val: string) {
     if (!/^\d*$/.test(val)) return;
     const next = [...otp];
@@ -134,20 +138,14 @@ export function Login() {
     setLoading(true);
     setOtpError(null);
     try {
-      // Fix: verifyOTP now takes 2 args, returns { success, user }
-      // Server sets the HttpOnly cookie on success
       const result = await verifyOTP(email, code);
-
       if (!result.success) {
         setOtpError(result.error ?? "Incorrect OTP.");
         setOTP(["", "", "", "", "", ""]);
         otpInputRefs.current[0]?.focus();
       } else if (result.user) {
-        // Fix: use setUser (not setSession) — token is in the HttpOnly cookie
         setUser(result.user);
         setPhase("success");
-
-        // Fix: use isProfileComplete from server, not local mock data
         const destination = result.user.isProfileComplete
           ? (from === "/login" ? "/dashboard" : from)
           : "/onboarding";
@@ -172,6 +170,30 @@ export function Login() {
     }
   }
 
+  // ── Forgot password ───────────────────────────────────────────────────────
+  async function handleForgotSubmit() {
+    const err = validateEmail(forgotEmail);
+    if (err) { setForgotEmailErr(err); return; }
+
+    setForgotLoading(true);
+    setForgotError(null);
+    try {
+      await authAPI.forgotPassword(forgotEmail);
+      setForgotPhase("sent");
+    } catch (err: any) {
+      setForgotError(err.message || "Something went wrong. Please try again.");
+    } finally {
+      setForgotLoading(false);
+    }
+  }
+
+  function closeForgot() {
+    setForgotPhase("idle");
+    setForgotEmail("");
+    setForgotEmailErr(null);
+    setForgotError(null);
+  }
+
   const inputCls = (hasErr: boolean) =>
     `w-full pl-12 pr-4 py-3 border rounded-xl text-sm outline-none transition-all bg-white ${
       hasErr
@@ -181,7 +203,7 @@ export function Login() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#f0faf4] via-white to-[#e8f5ee] flex">
-      {/* Left panel — branding */}
+      {/* Left panel */}
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-[#1A5F3D] to-[#0d3b25] flex-col justify-center items-center p-16 text-white">
         <div className="max-w-md">
           <div className="w-16 h-16 rounded-2xl bg-white/10 flex items-center justify-center mb-8">
@@ -197,7 +219,7 @@ export function Login() {
         </div>
       </div>
 
-      {/* Right panel — form */}
+      {/* Right panel */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-6">
         <motion.div
           initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
@@ -214,6 +236,7 @@ export function Login() {
           )}
 
           <AnimatePresence mode="wait">
+
             {/* ── Phase: Credentials ── */}
             {phase === "credentials" && (
               <motion.div key="credentials"
@@ -278,20 +301,108 @@ export function Login() {
 
                   <div className="flex items-center justify-between">
                     <span />
-                    <button type="button" onClick={() => setForgotMode(v => !v)}
-                      className="text-sm text-[#1A5F3D] hover:underline">
+                    <button
+                      type="button"
+                      onClick={() => { setForgotPhase("enter-email"); setForgotEmail(email); }}
+                      className="text-sm text-[#1A5F3D] hover:underline"
+                    >
                       Forgot password?
                     </button>
                   </div>
 
-                  {forgotMode && (
-                    <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-sm text-blue-800">
-                      <p className="font-semibold mb-1">Reset your password</p>
-                      <p>Contact <span className="font-mono font-semibold">support@smartfinance.in</span> and we'll send a reset link within 24 hours.</p>
-                      <button type="button" onClick={() => setForgotMode(false)}
-                        className="mt-2 text-xs text-blue-600 hover:underline">Close</button>
-                    </div>
-                  )}
+                  {/* ── Forgot password inline panel ── */}
+                  <AnimatePresence>
+                    {forgotPhase !== "idle" && (
+                      <motion.div
+                        key="forgot-panel"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.25 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="p-4 rounded-xl bg-[#f0faf4] border border-[#1A5F3D]/20">
+
+                          {forgotPhase === "enter-email" && (
+                            <div>
+                              <p className="text-sm font-semibold text-gray-800 mb-1">Reset your password</p>
+                              <p className="text-xs text-gray-500 mb-3">
+                                Enter your email and we'll send a secure reset link valid for 15 minutes.
+                              </p>
+
+                              {forgotError && (
+                                <div className="flex items-center gap-2 mb-3 p-2 bg-red-50 border border-red-200 rounded-lg">
+                                  <AlertCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />
+                                  <p className="text-xs text-red-600">{forgotError}</p>
+                                </div>
+                              )}
+
+                              <div className="relative mb-2">
+                                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                <input
+                                  type="email"
+                                  value={forgotEmail}
+                                  onChange={(e) => { setForgotEmail(e.target.value); setForgotEmailErr(null); }}
+                                  onBlur={() => setForgotEmailErr(validateEmail(forgotEmail))}
+                                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleForgotSubmit(); } }}
+                                  placeholder="your@email.com"
+                                  className={`w-full pl-9 pr-3 py-2 text-sm border rounded-lg outline-none transition-all bg-white ${
+                                    forgotEmailErr
+                                      ? "border-red-400 focus:ring-1 focus:ring-red-300"
+                                      : "border-gray-200 focus:ring-1 focus:ring-[#1A5F3D]/40 focus:border-[#1A5F3D]"
+                                  }`}
+                                  autoComplete="email"
+                                />
+                              </div>
+                              {forgotEmailErr && (
+                                <p className="mb-2 text-xs text-red-500">{forgotEmailErr}</p>
+                              )}
+
+                              <div className="flex gap-2 mt-3">
+                                {/* type="button" — prevents triggering the parent login form submit */}
+                                <button
+                                  type="button"
+                                  onClick={handleForgotSubmit}
+                                  disabled={forgotLoading}
+                                  className="flex-1 py-2 bg-gradient-to-r from-[#1A5F3D] to-[#2D7A4E] text-white rounded-lg text-sm font-semibold flex items-center justify-center gap-1.5 disabled:opacity-70 transition-all hover:shadow-md"
+                                >
+                                  {forgotLoading ? <><Spinner /> Sending…</> : <>Send Reset Link <ArrowRight className="w-3.5 h-3.5" /></>}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={closeForgot}
+                                  className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg bg-white transition-colors"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {forgotPhase === "sent" && (
+                            <div className="text-center py-2">
+                              <div className="w-10 h-10 rounded-full bg-[#1A5F3D]/10 flex items-center justify-center mx-auto mb-3">
+                                <CheckCircle className="w-5 h-5 text-[#1A5F3D]" />
+                              </div>
+                              <p className="text-sm font-semibold text-gray-800 mb-1">Check your inbox</p>
+                              <p className="text-xs text-gray-500 mb-3">
+                                If <span className="font-medium text-gray-700">{forgotEmail}</span> is registered,
+                                you'll receive a reset link shortly.
+                              </p>
+                              <button
+                                type="button"
+                                onClick={closeForgot}
+                                className="text-xs text-[#1A5F3D] hover:underline"
+                              >
+                                Back to sign in
+                              </button>
+                            </div>
+                          )}
+
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
 
                   <button type="submit" disabled={loading}
                     className="w-full py-3 bg-gradient-to-r from-[#1A5F3D] to-[#2D7A4E] text-white rounded-xl font-semibold hover:shadow-lg hover:scale-[1.01] transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:scale-100">

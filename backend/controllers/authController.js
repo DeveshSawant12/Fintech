@@ -1,10 +1,11 @@
 // backend/controllers/authController.js
 const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
 const User   = require("../models/User");
 const { signToken, buildPayload, revokeToken } = require("../utils/jwt");
 const { generateOTP, saveOTP, verifyOTP, lockout } = require("../utils/otp");
-const { sendOTPEmail, sendWelcomeEmail }            = require("../utils/email");
-const { ok, fail }                                  = require("../utils/response");
+const { sendOTPEmail, sendWelcomeEmail, sendPasswordResetEmail } = require("../utils/email");
+const { ok, fail } = require("../utils/response");
 
 // ── Cookie helpers ────────────────────────────────────────────────────────────
 const COOKIE_NAME = "sf_token";
@@ -12,7 +13,7 @@ const COOKIE_OPTS = {
   httpOnly: true,
   secure:   process.env.COOKIE_SECURE === "true",
   sameSite: process.env.COOKIE_SAME_SITE || "lax",
-  maxAge:   24 * 60 * 60 * 1000, // 1 day
+  maxAge:   24 * 60 * 60 * 1000,
   path:     "/",
 };
 
@@ -22,6 +23,19 @@ function setAuthCookie(res, token, maxAgeMs) {
 function clearAuthCookie(res) {
   res.clearCookie(COOKIE_NAME, { httpOnly: true, path: "/" });
 }
+
+// ── In-memory reset token store ───────────────────────────────────────────────
+// In production swap for a DB table or Redis.
+// Map: token → { email, expiresAt }
+const resetTokens = new Map();
+
+// Purge expired tokens every 5 min
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, data] of resetTokens) {
+    if (now > data.expiresAt) resetTokens.delete(token);
+  }
+}, 5 * 60 * 1000);
 
 // ── POST /api/auth/signup ─────────────────────────────────────────────────────
 const signup = async (req, res) => {
@@ -92,7 +106,6 @@ const verifyOTPHandler = async (req, res) => {
     const token = signToken(buildPayload(user));
     setAuthCookie(res, token);
 
-    // Return user in response body so frontend can update React state immediately
     return ok(res, {
       user,
       isProfileComplete: user.isProfileComplete,
@@ -105,7 +118,6 @@ const verifyOTPHandler = async (req, res) => {
 };
 
 // ── POST /api/auth/resend-otp ─────────────────────────────────────────────────
-// Never reveals whether the email exists (anti-enumeration)
 const resendOTP = async (req, res) => {
   try {
     const { email } = req.body;
@@ -122,19 +134,71 @@ const resendOTP = async (req, res) => {
   }
 };
 
+// ── POST /api/auth/forgot-password ────────────────────────────────────────────
+// Never reveals whether the email exists (anti-enumeration)
+const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    const user = await User.findByEmail(email);
+
+    if (user && user.provider === "email") {
+      // Generate a secure random token
+      const token     = crypto.randomBytes(32).toString("hex");
+      const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes
+
+      // Store it (replace existing if any)
+      resetTokens.set(token, { email: email.toLowerCase(), expiresAt });
+
+      const resetLink = `${process.env.CLIENT_URL}/reset-password?token=${token}`;
+      await sendPasswordResetEmail(email, resetLink, user.fullName);
+    }
+
+    // Always return the same response — don't reveal if email exists
+    return ok(res, {}, "If an account with that email exists, a reset link has been sent.");
+  } catch (err) {
+    console.error("forgot-password:", err);
+    return fail(res, "Failed to send reset email.", 500);
+  }
+};
+
+// ── POST /api/auth/reset-password ─────────────────────────────────────────────
+const resetPassword = async (req, res) => {
+  try {
+    const { token, password } = req.body;
+
+    if (!token) return fail(res, "Reset token is required.", 400);
+
+    const data = resetTokens.get(token);
+
+    if (!data)                    return fail(res, "Invalid or expired reset link.", 400);
+    if (Date.now() > data.expiresAt) {
+      resetTokens.delete(token);
+      return fail(res, "Reset link has expired. Please request a new one.", 400);
+    }
+
+    const user = await User.findByEmail(data.email);
+    if (!user) return fail(res, "Account not found.", 404);
+
+    // Update password
+    await User.updatePassword(user.id, password);
+
+    // Invalidate the token immediately after use
+    resetTokens.delete(token);
+
+    return ok(res, {}, "Password reset successfully. You can now log in.");
+  } catch (err) {
+    console.error("reset-password:", err);
+    return fail(res, "Password reset failed.", 500);
+  }
+};
+
 // ── GET /api/auth/google/callback ─────────────────────────────────────────────
-// Fix: set HttpOnly cookie HERE, then redirect with just ?status=
-// No intermediate code exchange — same pattern as every major OAuth provider.
 const googleCallback = (req, res) => {
   try {
     const user  = req.user;
     const token = signToken(buildPayload(user));
-
-    // Set the cookie directly — no temp code needed
     setAuthCookie(res, token);
-
     const dest = user.isProfileComplete ? "dashboard" : "onboarding";
-    // Redirect to frontend callback page with only the destination, no token
     res.redirect(`${process.env.CLIENT_URL}/auth/callback?status=${dest}`);
   } catch (err) {
     console.error("google callback:", err);
@@ -164,6 +228,7 @@ const logout = async (req, res) => {
 
 module.exports = {
   signup, login, verifyOTPHandler, resendOTP,
+  forgotPassword, resetPassword,
   googleCallback, getMe, logout,
   setAuthCookie, clearAuthCookie, COOKIE_NAME,
 };

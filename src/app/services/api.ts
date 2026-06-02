@@ -7,8 +7,6 @@
 const BASE = (import.meta as any).env?.VITE_API_URL || "/api";
 
 // ── Core fetch wrapper ────────────────────────────────────────────────────────
-// Fix #5: removed manual Authorization header injection and localStorage token storage.
-// cookies are sent automatically via credentials: "include".
 async function apiFetch<T = unknown>(
   path: string,
   options: RequestInit = {}
@@ -21,7 +19,7 @@ async function apiFetch<T = unknown>(
   const res  = await fetch(`${BASE}${path}`, {
     ...options,
     headers,
-    credentials: "include",   // send HttpOnly cookies on every request
+    credentials: "include",
   });
   const json = await res.json();
 
@@ -50,6 +48,13 @@ export const authAPI = {
 
   exchangeCode: (code: string) =>
     apiFetch("/auth/exchange-code", { method: "POST", body: JSON.stringify({ code }) }),
+
+  // ── Password reset ──────────────────────────────────────────────────────────
+  forgotPassword: (email: string) =>
+    apiFetch("/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) }),
+
+  resetPassword: (token: string, password: string) =>
+    apiFetch("/auth/reset-password", { method: "POST", body: JSON.stringify({ token, password }) }),
 
   me:     () => apiFetch("/auth/me"),
   logout: () => apiFetch("/auth/logout", { method: "POST" }),
@@ -81,7 +86,6 @@ export const contentAPI = {
 
 // ── Admin API ─────────────────────────────────────────────────────────────────
 export const adminAPI = {
-  // Fix #4: two-step admin login
   login: (body: { email: string; password: string }) =>
     apiFetch("/admin/login", { method: "POST", body: JSON.stringify(body) }),
 

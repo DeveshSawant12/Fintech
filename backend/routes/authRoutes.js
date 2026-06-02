@@ -7,14 +7,22 @@ const validate         = require("../middleware/validate");
 const { authenticate } = require("../middleware/auth");
 const {
   signup, login, verifyOTPHandler, resendOTP,
+  forgotPassword, resetPassword,
   googleCallback, getMe, logout,
 } = require("../controllers/authController");
 
-// ── OTP rate limiter ──────────────────────────────────────────────────────────
+// ── Rate limiters ─────────────────────────────────────────────────────────────
 const otpLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
   message: { success: false, message: "Too many OTP requests. Try again in 15 minutes." },
+});
+
+// Stricter limit for password reset — prevents abuse
+const resetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 3,
+  message: { success: false, message: "Too many reset requests. Try again in 15 minutes." },
 });
 
 // ── Validation rules ──────────────────────────────────────────────────────────
@@ -39,6 +47,15 @@ const otpRules = [
   body("otp").matches(/^\d{6}$/).withMessage("OTP must be a 6-digit number."),
 ];
 
+const resetPasswordRules = [
+  body("token").notEmpty().withMessage("Reset token is required."),
+  body("password")
+    .isLength({ min: 8 }).withMessage("Password must be at least 8 characters.")
+    .matches(/[A-Z]/).withMessage("Password must contain at least one uppercase letter.")
+    .matches(/[0-9]/).withMessage("Password must contain at least one number.")
+    .matches(/[^A-Za-z0-9]/).withMessage("Password must contain at least one special character."),
+];
+
 // ── Routes ────────────────────────────────────────────────────────────────────
 router.post("/signup",     signupRules, validate, signup);
 router.post("/login",      loginRules,  validate, login);
@@ -46,11 +63,17 @@ router.post("/verify-otp", otpRules,    validate, verifyOTPHandler);
 router.post("/resend-otp", otpLimiter,
   [body("email").isEmail().normalizeEmail()], validate, resendOTP);
 
+// ── Password reset (public — no auth required) ────────────────────────────────
+router.post("/forgot-password", resetLimiter,
+  [body("email").isEmail().normalizeEmail().withMessage("Valid email is required.")],
+  validate, forgotPassword);
+
+router.post("/reset-password", resetPasswordRules, validate, resetPassword);
+
 // ── Google OAuth ──────────────────────────────────────────────────────────────
 router.get("/google",
   passport.authenticate("google", { scope: ["profile", "email"], session: false }));
 
-// Cookie is set inside googleCallback, then redirects to /auth/callback?status=…
 router.get("/google/callback",
   passport.authenticate("google", {
     session:         false,

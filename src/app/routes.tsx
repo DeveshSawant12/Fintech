@@ -16,6 +16,7 @@ import { AdminPortal }       from "./pages/AdminPortal";
 import { Onboarding }        from "./pages/Onboarding";
 import { Settings }          from "./pages/Settings";
 import { AuthCallback } from "./pages/AuthCallback";
+import { ResetPassword } from "./pages/ResetPassword";
 import {
   ProtectedRoute, OnboardingRoute, AdminRoute,
   GuestOnlyRoute, AdminGuestRoute,
@@ -42,6 +43,7 @@ export const router = createBrowserRouter([
       { path: "/services",  Component: Services },
       { path: "/webinars",  Component: Webinars },
       { path: "/insurance", Component: Insurance },
+      { path: "/reset-password", Component: ResetPassword },
 
       // ── User auth (guest only) ─────────────────────────────────────────────
       { path: "/login",  element: <GuestOnlyRoute><Login /></GuestOnlyRoute> },
@@ -68,6 +70,7 @@ export const router = createBrowserRouter([
       { path: "/calculator/lumpsum", element: <ProtectedRoute><LumpsumCalculator /></ProtectedRoute> },
       { path: "/planner",            element: <ProtectedRoute><FinancialPlanner /></ProtectedRoute> },
       { path: "/settings",           element: <ProtectedRoute><Settings /></ProtectedRoute> },
+     
 
       // ── 404 ──────────────────────────────────────────────────────────────
       { path: "*", Component: NotFound },
