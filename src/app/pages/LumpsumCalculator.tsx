@@ -615,6 +615,7 @@ export function LumpsumCalculator() {
       </section>
 
       <Footer />
+      <AIAssistant />
     </div>
   );
 }

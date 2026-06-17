@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useLanguage } from "../LanguageContext";
+import { AIAssistant } from "../components/AIAssistant";
 
 export function Home() {
   const { t } = useLanguage();
@@ -489,6 +490,7 @@ export function Home() {
       </section>
 
       <Footer />
+      <AIAssistant />
     </div>
   );
 }

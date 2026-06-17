@@ -710,6 +710,7 @@ export function SIPCalculator() {
       </section>
 
       <Footer />
+      <AIAssistant />
     </div>
   );
 }

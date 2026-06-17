@@ -50,6 +50,7 @@ const authRoutes    = require("./routes/authRoutes");
 const userRoutes    = require("./routes/userRoutes");
 const adminRoutes   = require("./routes/adminRoutes");
 const contentRoutes = require("./routes/contentRoutes");
+const aiRoutes      = require("./routes/aiRoutes");
 const { errorHandler, notFound } = require("./middleware/errorHandler");
 
 const app    = express();
@@ -112,6 +113,7 @@ app.use("/api/auth",    authLimiter, authRoutes);
 app.use("/api/user",    userRoutes);
 app.use("/api/admin",   adminRoutes);
 app.use("/api/content", contentRoutes);
+app.use("/api/ai",      aiRoutes);
 
 // ── Error handling ────────────────────────────────────────────────────────────
 app.use(notFound);

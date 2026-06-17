@@ -17,6 +17,7 @@ import { Onboarding }        from "./pages/Onboarding";
 import { Settings }          from "./pages/Settings";
 import { AuthCallback } from "./pages/AuthCallback";
 import { ResetPassword } from "./pages/ResetPassword";
+import AIChat from "./pages/AIChat";
 import {
   ProtectedRoute, OnboardingRoute, AdminRoute,
   GuestOnlyRoute, AdminGuestRoute,
@@ -70,7 +71,11 @@ export const router = createBrowserRouter([
       { path: "/calculator/lumpsum", element: <ProtectedRoute><LumpsumCalculator /></ProtectedRoute> },
       { path: "/planner",            element: <ProtectedRoute><FinancialPlanner /></ProtectedRoute> },
       { path: "/settings",           element: <ProtectedRoute><Settings /></ProtectedRoute> },
-     
+      
+      // ── AI Wealth Assistant – single unified chat ─────────────────────────
+      { path: "/ai/chat", element: <ProtectedRoute><AIChat /></ProtectedRoute> },
+      // Legacy AI sub-routes redirect to unified chat
+      { path: "/ai/*",   element: <ProtectedRoute><AIChat /></ProtectedRoute> },
 
       // ── 404 ──────────────────────────────────────────────────────────────
       { path: "*", Component: NotFound },

@@ -58,6 +58,7 @@ import {
 import { useAuth } from "../auth/AuthContext";
 import { getUserProfile, saveUserProfile } from "../data/userProfile";
 import { syncProfileToFinancialData } from "../data/syncProfile";
+import { AIAssistant } from "../components/AIAssistant";
 
 const STEPS = [
   { id: "basic",      label: "Basic Details",   icon: <User className="w-4 h-4" /> },
@@ -913,6 +914,7 @@ export function FinancialPlanner() {
       </section>
 
       <Footer />
+      <AIAssistant />
     </div>
   );
 }

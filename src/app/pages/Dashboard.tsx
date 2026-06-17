@@ -4,7 +4,7 @@ import {
   Home, TrendingUp, Calculator, FileText, Video, Settings, LogOut,
   Menu, X, Wallet, ArrowUpRight, ArrowDownRight, User, Bell,
   Shield, Target, AlertTriangle, CheckCircle, Info, ChevronRight,
-  Newspaper, Play,
+  Newspaper, Play, Sparkles,
 } from "lucide-react";
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
@@ -14,6 +14,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "../auth/AuthContext";
 import { getFinancialProfile, getAdminContent } from "../data/mockData";
 import { getUserProfile } from "../data/userProfile";
+import { AIAssistant } from "../components/AIAssistant";
 
 // ─── Sidebar link ─────────────────────────────────────────────────────────────
 function SidebarLink({ icon, label, active, to, onClick }: {
@@ -244,6 +245,7 @@ export function Dashboard() {
                 <SidebarLink icon={<Bell className="w-4 h-4" />} label="Insights"
                   active={activeTab === "insights"} onClick={() => setActiveTab("insights")} />
                 <div className="h-px bg-gray-100 my-2" />
+                <SidebarLink icon={<Sparkles className="w-4 h-4" />} label="AI Assistant" to="/ai/chat" />
                 <SidebarLink icon={<TrendingUp className="w-4 h-4" />} label="Investments" to="/services" />
                 <SidebarLink icon={<Calculator className="w-4 h-4" />} label="Calculators" to="/calculator/sip" />
                 <SidebarLink icon={<FileText className="w-4 h-4" />} label="Planner" to="/planner" />
@@ -372,6 +374,9 @@ export function Dashboard() {
                   </div>
                 </div>
               </div>
+
+              {/* AI Wealth Assistant – inline chat */}
+              <AIAssistant inline />
 
               {/* Expense breakdown + Insights */}
               <div className="grid lg:grid-cols-2 gap-6">
@@ -771,6 +776,8 @@ export function Dashboard() {
           )}
         </main>
       </div>
+      {/* Floating AI assistant available on all dashboard tabs */}
+      <AIAssistant />
     </div>
   );
 }
