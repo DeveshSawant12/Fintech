@@ -6,7 +6,6 @@ import {
   Zap, PiggyBank, ChevronDown, Trash2, Plus, AlertCircle,
 } from "lucide-react";
 import { aiAPI, type AIMessage, type AIConversation } from "../services/aiService";
-import { useState as useStateAlias, useEffect as useEffectAlias, useRef as useRefAlias } from "react";
 
 // ── Quick action chips ────────────────────────────────────────────────────────
 const QUICK_ACTIONS = [
@@ -27,54 +26,6 @@ function md(raw: string): string {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
-
-    // ── Add this near the top of AIAssistant.tsx, after the md() function ────────
-
-
-
-// Renders assistant text progressively, word-by-word, like Claude streaming.
-// Once a message has finished animating once, it's marked "done" and renders instantly on re-render.
-const animatedIds = new Set<string>();
-
-function MsgContent({ text, isUser, msgId }: { text: string; isUser: boolean; msgId: string }) {
-  const [display, setDisplay] = useStateAlias(animatedIds.has(msgId) ? text : "");
-  const indexRef = useRefAlias(0);
-
-  useEffectAlias(() => {
-    if (isUser || animatedIds.has(msgId)) {
-      setDisplay(text);
-      return;
-    }
-
-    animatedIds.add(msgId);
-    indexRef.current = 0;
-
-    // Split into words but keep markdown tokens (**, |, #, etc.) intact —
-    // reveal in small chunks for a smooth but quick stream feel.
-    const chunks = text.match(/\S+\s*|\s+/g) || [text];
-    let raf: ReturnType<typeof setTimeout>;
-
-    const step = () => {
-      indexRef.current += 1;
-      setDisplay(chunks.slice(0, indexRef.current).join(""));
-      if (indexRef.current < chunks.length) {
-        // Faster for short messages, slightly slower for longer ones — feels natural
-        const delay = chunks.length > 120 ? 8 : 18;
-        raf = setTimeout(step, delay);
-      }
-    };
-    step();
-
-    return () => clearTimeout(raf);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, msgId, isUser]);
-
-  if (isUser) return <p className="text-sm leading-relaxed">{text}</p>;
-  return (
-    <div className="text-sm leading-relaxed"
-      dangerouslySetInnerHTML={{ __html: md(display) }} />
-  );
-}
 
   // fenced code blocks
   s = s.replace(/```[\w]*\n?([\s\S]*?)```/g,
@@ -118,11 +69,52 @@ function MsgContent({ text, isUser, msgId }: { text: string; isUser: boolean; ms
   return s;
 }
 
-function MsgContent({ text, isUser }: { text: string; isUser: boolean }) {
+// ── Tracks which message IDs have already finished animating, so reopening a
+// conversation or re-rendering doesn't replay the typewriter effect ──────────
+const animatedIds = new Set<string>();
+
+// ── Claude-style progressive reveal: renders assistant text word-by-word ─────
+function MsgContent({ text, isUser, msgId }: { text: string; isUser: boolean; msgId: string }) {
+  const alreadyAnimated = animatedIds.has(msgId);
+  const [display, setDisplay] = useState(isUser || alreadyAnimated ? text : "");
+  const indexRef = useRef(0);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (isUser || animatedIds.has(msgId)) {
+      setDisplay(text);
+      return;
+    }
+
+    animatedIds.add(msgId);
+    indexRef.current = 0;
+
+    // Split into words while keeping whitespace attached, so markdown tokens
+    // (**, |, #, etc.) stay intact at every intermediate render.
+    const chunks = text.match(/\S+\s*|\s+/g) || [text];
+
+    const step = () => {
+      indexRef.current += 1;
+      setDisplay(chunks.slice(0, indexRef.current).join(""));
+      if (indexRef.current < chunks.length) {
+        // Long replies stream faster so they don't drag on; short ones get a
+        // touch more pacing so they don't feel instant/abrupt.
+        const delay = chunks.length > 120 ? 8 : 18;
+        timerRef.current = setTimeout(step, delay);
+      }
+    };
+    step();
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text, msgId, isUser]);
+
   if (isUser) return <p className="text-sm leading-relaxed">{text}</p>;
   return (
     <div className="text-sm leading-relaxed"
-      dangerouslySetInnerHTML={{ __html: md(text) }} />
+      dangerouslySetInnerHTML={{ __html: md(display) }} />
   );
 }
 
