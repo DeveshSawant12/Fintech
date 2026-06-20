@@ -372,6 +372,39 @@ async function callGemini(prompt, history = []) {
   return null; // All models/attempts exhausted
 }
 
+// ── Generate a clean conversation title (Claude/ChatGPT-style) ───────────────
+// BUG FIX: previously every new conversation was titled via
+// `message.substring(0, 60)` — the raw first message, untouched. For short
+// greetings ("hey", "hi") this means every single chat in the sidebar shows
+// the identical title with no way to tell them apart. This generates a
+// short, distinct title via a quick LLM call instead, falling back to a
+// clean word-boundary truncation (not mid-word) only if that call fails.
+async function generateTitle(message) {
+  const prompt = `Generate a short, clean title (max 5 words, no quotes, no punctuation at the end) for a conversation that starts with this message:
+
+"${message}"
+
+Reply with ONLY the title text, nothing else.`;
+
+  try {
+    const title = await callGemini(prompt, []);
+    if (title) {
+      const cleaned = title.trim().replace(/^["']|["']$/g, "").split("\n")[0];
+      if (cleaned.length > 0 && cleaned.length <= 60) return cleaned;
+    }
+  } catch (err) {
+    console.error("generateTitle error:", err.message);
+  }
+
+  // Fallback: truncate cleanly at a word boundary instead of mid-word,
+  // and append an ellipsis so distinct long messages don't collapse to
+  // the same truncated prefix.
+  const truncated = message.substring(0, 50);
+  const lastSpace = truncated.lastIndexOf(" ");
+  const base = lastSpace > 20 ? truncated.substring(0, lastSpace) : truncated;
+  return base + (message.length > 50 ? "…" : "");
+}
+
 // ── Main chat function ────────────────────────────────────────────────────────
 async function chat(userId, message, conversationId = null) {
   try {
@@ -382,7 +415,8 @@ async function chat(userId, message, conversationId = null) {
       if (!conversation || conversation.userId !== userId)
         return { error: "Conversation not found or unauthorised." };
     } else {
-      conversation = await AIConversation.create(userId, message.substring(0, 60));
+      const title = await generateTitle(message);
+      conversation = await AIConversation.create(userId, title);
       conversationId = conversation.id;
     }
 

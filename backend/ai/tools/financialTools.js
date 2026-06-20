@@ -26,6 +26,42 @@ const Loan = require("../../models/Loan");
 const Income = require("../../models/Income");
 const Investment = require("../../models/Investment");
 
+// ── BUG FIX: Loan.findByUserId() / Income.findByUserId() query separate
+// normalized tables (loan_records / income_records) that onboarding never
+// writes to — onboarding saves loans/income straight onto the `users` row
+// (users.loans JSONB, users.income_monthly/income_additional columns).
+// That made every loan- and tax-related tool below silently return empty/
+// zero data, even when the user had completed onboarding.
+//
+// Fix: read loans/income from User.findById() (ground truth — same source
+// userController.getDashboardSummary uses) and reshape into the same field
+// names the rest of this file already expects (outstandingAmount, emi,
+// interestRatePct, loanType / amount, frequency).
+async function getLoansFromUser(userId) {
+  const user = await User.findById(userId);
+  const loans = user?.loans || [];
+  return loans.map((l, i) => ({
+    id: l.id || `loan-${i}`,
+    loanType: l.loanType || l.type || "other",
+    outstandingAmount: parseFloat(l.outstandingAmount) || 0,
+    emi: parseFloat(l.emi) || 0,
+    interestRatePct: parseFloat(l.interestRatePct ?? l.interestRate) || 0,
+  }));
+}
+
+async function getIncomeFromUser(userId) {
+  const user = await User.findById(userId);
+  const incomeObj = user?.income || {};
+  const entries = [];
+  if (parseFloat(incomeObj.monthly) > 0) {
+    entries.push({ source: incomeObj.source || "primary", amount: parseFloat(incomeObj.monthly), frequency: "monthly" });
+  }
+  if (parseFloat(incomeObj.additionalMonthly) > 0) {
+    entries.push({ source: "additional", amount: parseFloat(incomeObj.additionalMonthly), frequency: "monthly" });
+  }
+  return entries;
+}
+
 // ── Tool 1: Get Financial Profile ─────────────────────────────────────────────
 async function getFinancialProfile(userId) {
   const [user, netWorth, budget, emergency] = await Promise.all([
@@ -79,7 +115,7 @@ async function getInvestmentSummary(userId) {
 // ── Tool 3: Get Loan Summary ──────────────────────────────────────────────────
 async function getLoanSummary(userId) {
   const [loans, debtRatio] = await Promise.all([
-    Loan.findByUserId(userId, { status: "active" }),
+    getLoansFromUser(userId),
     calculateDebtToIncomeRatio(userId),
   ]);
 
@@ -245,7 +281,7 @@ async function whatIfSimulator(userId, changes) {
 // ── Tool 13: Loan Advisor ────────────────────────────────────────────────────
 async function loanAdvisor(userId) {
   const [loans, debtRatio, budget] = await Promise.all([
-    Loan.findByUserId(userId, { status: "active" }),
+    getLoansFromUser(userId),
     calculateDebtToIncomeRatio(userId),
     calculateBudgetHealth(userId),
   ]);
@@ -301,11 +337,15 @@ async function investmentAdvisor(userId) {
 
 // ── Tool 15: Tax Planner ──────────────────────────────────────────────────────
 async function taxPlanner(userId) {
-  const [incomes, investments, loans] = await Promise.all([
-    Income.findByUserId(userId, { activeOnly: true }),
-    Investment.findByUserId(userId, { activeOnly: true }),
-    Loan.findByUserId(userId, { status: "active" }),
+  const [incomes, user, loans] = await Promise.all([
+    getIncomeFromUser(userId),
+    User.findById(userId),
+    getLoansFromUser(userId),
   ]);
+  const investments = (user?.investments || []).map((inv) => ({
+    investmentType: inv.investmentType || inv.type || "other",
+    investedAmount: parseFloat(inv.investedAmount) || 0,
+  }));
 
   const annualIncome = incomes.reduce((s, i) => s + (i.frequency === "monthly" ? i.amount * 12 : i.amount), 0);
   const section80C = Math.min(investments.filter(i => ["ppf", "nps", "mutual_fund"].includes(i.investmentType)).reduce((s, i) => s + i.investedAmount, 0), 150000);
