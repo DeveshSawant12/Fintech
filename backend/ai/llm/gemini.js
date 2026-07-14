@@ -6,8 +6,12 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 // modelName allows callers to override the default model (used for fallback on overload)
 function getModel(systemInstruction, modelName) {
   return genAI.getGenerativeModel({
-    model: modelName || process.env.GEMINI_MODEL_CHAT || "gemini-2.5-flash",
-    generationConfig: { temperature: 0.9 },
+    model: modelName || process.env.GEMINI_MODEL_CHAT || "gemini-3.5-flash",
+    generationConfig: {
+      temperature: 0.35,
+      topP: 0.8,
+      topK: 32,
+    },
     ...(systemInstruction ? { systemInstruction } : {}),
   });
 }

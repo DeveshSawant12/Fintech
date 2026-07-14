@@ -7,8 +7,11 @@ const { getModel } = require("./llm/gemini");
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const AI_CONFIG = {
-  model: process.env.GEMINI_MODEL_CHAT || "gemini-2.5-flash",
-  systemPrompt: `You are SmartFinance AI — a thoughtful, knowledgeable Indian wealth advisor having a real conversation with the user.
+  model: process.env.GEMINI_MODEL_CHAT || "gemini-3.5-flash",
+  maxContextTokens: parseInt(process.env.AI_MAX_CONTEXT_TOKENS || "14000", 10),
+  maxConversationTokens: parseInt(process.env.AI_MAX_CONVERSATION_TOKENS || "70000", 10),
+  warnConversationTokens: parseInt(process.env.AI_WARN_CONVERSATION_TOKENS || "56000", 10),
+  systemPrompt: `You are SmartFinance AI — a thoughtful, knowledgeable assistant with strong Indian wealth-advisory skills.
 
 How you communicate:
 - Talk like a sharp, friendly human advisor would — not like a report generator. Vary your phrasing; don't reuse the same openers or structure every time.
@@ -19,14 +22,119 @@ How you communicate:
 
 What you know:
 - PERSONAL DATA: When real account data is provided below, treat it as ground truth — quote exact figures, and reason across multiple data points together (income vs expenses vs investments vs goals) when relevant to the question, even if the user only asked about one of them.
-- GENERAL KNOWLEDGE: For concepts, market info, strategies, or anything not about this specific user's account, answer from your expertise as an Indian financial advisor — practical, current, and specific to Indian markets (NSE/BSE, mutual funds, PPF/NPS/EPF, Indian tax sections).
+- GENERAL KNOWLEDGE: For anything not about this user's account, answer the actual question directly. If the answer depends on current or live information, use grounded Google Search results when available and cite sources.
+- FINANCE CONTEXT: For finance, investing, tax, and wealth planning, use Indian context by default unless the user asks for another country.
 
 Formatting conventions:
 - ₹, lakhs (L), crores (Cr) for amounts.
 - If real data shows ₹0 or missing values for something relevant to the question, say so plainly and naturally — don't turn it into a bulleted "next steps" checklist unless the user is clearly asking what to do next.
 
-Stay focused on personal finance, investing, and wealth management — but a brief friendly aside or acknowledgment of small talk is fine before steering back.`,
+Stay accurate. If current data is unavailable or sources conflict, say that plainly instead of guessing.`,
 };
+
+function estimateTokens(text = "") {
+  return Math.ceil(String(text).length / 4);
+}
+
+function compactText(text = "", maxChars = 900) {
+  const clean = String(text).replace(/\s+/g, " ").trim();
+  if (clean.length <= maxChars) return clean;
+  return `${clean.slice(0, maxChars - 1).trim()}…`;
+}
+
+function conversationTokenEstimate(messages) {
+  return messages.reduce((sum, m) => sum + estimateTokens(m.content), 0);
+}
+
+function buildOlderConversationSummary(messages) {
+  if (!messages.length) return "";
+
+  const userTurns = messages.filter(m => m.role === "user");
+  const firstUser = userTurns[0]?.content;
+  const recentTopics = userTurns.slice(-6).map(m => compactText(m.content, 180));
+
+  return [
+    "Earlier conversation summary for continuity:",
+    firstUser ? `- Conversation started with: ${compactText(firstUser, 260)}` : "",
+    recentTopics.length ? `- Earlier user topics: ${recentTopics.join(" | ")}` : "",
+    "Use this only as background. Give priority to the latest user question and the recent turns below.",
+    "If the user asks a new question, answer the new question directly and do not repeat earlier answers unless asked for a recap.",
+  ].filter(Boolean).join("\n");
+}
+
+function normalizeGeminiHistory(history) {
+  const normalized = [];
+
+  for (const item of history) {
+    const text = item?.parts?.[0]?.text;
+    if (!text || !text.trim()) continue;
+
+    const role = item.role === "model" ? "model" : "user";
+    const last = normalized[normalized.length - 1];
+    if (last && last.role === role) {
+      last.parts[0].text += `\n\n${text}`;
+    } else {
+      normalized.push({ role, parts: [{ text }] });
+    }
+  }
+
+  while (normalized[0]?.role === "model") normalized.shift();
+  return normalized;
+}
+
+function buildGeminiHistory(allMessages) {
+  const previousMessages = allMessages.slice(0, -1);
+  const maxContextTokens = AI_CONFIG.maxContextTokens;
+  const selected = [];
+  let usedTokens = 0;
+
+  for (let i = previousMessages.length - 1; i >= 0; i--) {
+    const msg = previousMessages[i];
+    const cost = estimateTokens(msg.content) + 16;
+    if (selected.length >= 28 || usedTokens + cost > maxContextTokens) break;
+    selected.unshift(msg);
+    usedTokens += cost;
+  }
+
+  const omitted = previousMessages.slice(0, previousMessages.length - selected.length);
+  const history = [];
+  const summary = buildOlderConversationSummary(omitted);
+
+  if (summary) {
+    history.push({
+      role: "user",
+      parts: [{ text: summary }],
+    });
+  }
+
+  history.push(...selected.map(m => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: m.content }],
+  })));
+
+  return {
+    history: normalizeGeminiHistory(history),
+    omittedCount: omitted.length,
+    selectedCount: selected.length,
+    usedTokens,
+  };
+}
+
+function buildConversationLimitMessage(totalTokens, messageCount) {
+  return `This chat is getting too long for me to use reliably in one context window.
+
+You have about ${Math.round(totalTokens).toLocaleString("en-IN")} tokens across ${messageCount} messages in this thread. If I continue here, I may miss earlier details or repeat myself.
+
+Please start a new chat and paste a short summary of what you want to continue. A useful starter would be:
+
+> Continue from my previous financial planning chat. My current focus is: [goal/problem]. Key numbers are: [income, expenses, investments, loans, goals].`;
+}
+
+function appendContextWarning(responseText, totalTokens) {
+  if (totalTokens < AI_CONFIG.warnConversationTokens) return responseText;
+  if (responseText.includes("This chat is getting long")) return responseText;
+  return `${responseText}\n\n---\n\nNote: this chat is getting long. If my replies start missing older details, start a new chat and paste a short summary so I can continue cleanly.`;
+}
 
 const TOOL_DEFINITIONS = [
   { name: "getFinancialProfile",  description: "Complete snapshot: net worth, income, expenses, savings rate, emergency fund" },
@@ -97,18 +205,26 @@ const PERSONAL_DATA_PATTERNS = [
   "my ", "i have", "i earn", "i spend", "my score", "my portfolio", "my loan",
   "my budget", "my goal", "my retirement", "my investment", "my income",
   "my expense", "my savings", "my tax", "my health", "my wealth",
-  "am i ", "do i ", "can i ", "should i ", "will i ", "how am i",
+  "am i ", "do i ", "can i afford", "can i buy", "should i buy", "will i have enough",
   "how is my", "what is my", "show me my", "analyse my", "analyze my",
 ];
+
+const PERSONAL_PRONOUN_PATTERNS = [
+  /\b(my|mine)\b/,
+  /\bi\s+(earn|spend|save|invest|owe|have|hold|pay|need|want)\b/,
+];
+
+function isPersonalDataQuery(query) {
+  const q = (query || "").toLowerCase().trim();
+  return PERSONAL_DATA_PATTERNS.some((p) => q.includes(p)) ||
+    PERSONAL_PRONOUN_PATTERNS.some((p) => p.test(q));
+}
 
 // ── Classify query type ───────────────────────────────────────────────────────
 function isGeneralKnowledge(query) {
   const q = query.toLowerCase().trim();
 
-  // If it explicitly mentions "my" or personal context → always personal
-  for (const p of PERSONAL_DATA_PATTERNS) {
-    if (q.includes(p)) return false;
-  }
+  if (isPersonalDataQuery(q)) return false;
 
   // If it matches general knowledge patterns → no tools needed
   for (const p of GENERAL_KNOWLEDGE_PATTERNS) {
@@ -333,14 +449,27 @@ ${data.sufficient ? `✅ On track! Surplus: ${fmt(Math.abs(gap))}` : `⚠️ Sho
 // systemInstruction is passed to getModel() — Gemini's native system prompt slot.
 // The user-facing `prompt` should contain ONLY the question + data context, never the system prompt.
 const FALLBACK_MODELS = [
-  process.env.GEMINI_MODEL_CHAT || "gemini-2.5-flash",
+  process.env.GEMINI_MODEL_CHAT,
+  "gemini-3.5-flash",
+  "gemini-3-flash-preview",
+  "gemini-2.5-flash",
   "gemini-2.0-flash",
   "gemini-1.5-flash",
-];
+].filter(Boolean).filter((model, index, list) => list.indexOf(model) === index);
 
 function isOverloadedError(err) {
   const msg = (err?.message || "").toLowerCase();
   return msg.includes("503") || msg.includes("overloaded") || msg.includes("high demand") || msg.includes("unavailable");
+}
+
+function isModelUnavailableError(err) {
+  const msg = (err?.message || "").toLowerCase();
+  return msg.includes("404") || msg.includes("not_found") || msg.includes("no longer available") || msg.includes("not found");
+}
+
+function isQuotaErrorMessage(msg = "") {
+  const text = String(msg).toLowerCase();
+  return text.includes("429") || text.includes("quota") || text.includes("too_many_requests") || text.includes("rate limit");
 }
 
 async function sleep(ms) {
@@ -362,7 +491,9 @@ async function callGemini(prompt, history = []) {
         return text && text.length > 20 ? text : null;
       } catch (err) {
         const overloaded = isOverloadedError(err);
+        const modelUnavailable = isModelUnavailableError(err);
         console.error(`Gemini error (model=${modelName}, attempt=${attempt + 1}):`, err.message);
+        if (modelUnavailable) break; // Try the next fallback model.
         if (!overloaded) return null; // Non-retryable error (auth, bad request, etc.)
         if (attempt === 0) await sleep(600); // brief backoff before retrying same model
       }
@@ -370,6 +501,102 @@ async function callGemini(prompt, history = []) {
     // Move to next fallback model
   }
   return null; // All models/attempts exhausted
+}
+
+function extractGroundedText(interaction) {
+  if (interaction?.output_text) return interaction.output_text;
+
+  const texts = [];
+  for (const step of interaction?.steps || []) {
+    if (step.type !== "model_output") continue;
+    for (const block of step.content || []) {
+      if (block.type === "text" && block.text) texts.push(block.text);
+    }
+  }
+  return texts.join("\n\n").trim();
+}
+
+function extractGroundedCitations(interaction) {
+  const seen = new Set();
+  const citations = [];
+
+  for (const step of interaction?.steps || []) {
+    if (step.type !== "model_output") continue;
+    for (const block of step.content || []) {
+      for (const annotation of block.annotations || []) {
+        if (annotation.type !== "url_citation" || !annotation.url) continue;
+        const key = annotation.url;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        citations.push({
+          title: annotation.title || annotation.url,
+          url: annotation.url,
+        });
+      }
+    }
+  }
+
+  return citations;
+}
+
+function withSources(text, citations) {
+  if (!text || !citations?.length) return text;
+  const sourceList = citations
+    .slice(0, 5)
+    .map((c, i) => `${i + 1}. [${c.title}](${c.url})`)
+    .join("\n");
+  return `${text.trim()}\n\n**Sources**\n${sourceList}`;
+}
+
+async function callGeminiGrounded(prompt) {
+  if (!process.env.GEMINI_API_KEY || typeof fetch !== "function") return null;
+
+  const models = [
+    process.env.GEMINI_MODEL_GROUNDED,
+    process.env.GEMINI_MODEL_CHAT,
+    "gemini-3.5-flash",
+    "gemini-3-flash-preview",
+    "gemini-2.5-flash",
+  ].filter(Boolean).filter((model, index, list) => list.indexOf(model) === index);
+
+  for (const model of models) {
+    const body = {
+      model,
+      input: prompt,
+      tools: [{ type: "google_search" }],
+    };
+
+    try {
+      const res = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": process.env.GEMINI_API_KEY,
+        },
+        body: JSON.stringify(body),
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = json?.error?.message || `HTTP ${res.status}`;
+        console.error(`Gemini grounded error (model=${model}):`, msg);
+        if (res.status === 404 || /no longer available|not_found|not found/i.test(msg)) continue;
+        if (res.status === 429 || isQuotaErrorMessage(msg)) {
+          return "Gemini Search is connected, but this API key has exceeded its current quota/rate limit. Please check billing or quota in Google AI Studio, then try again.";
+        }
+        return null;
+      }
+
+      const text = extractGroundedText(json);
+      if (!text || text.length < 10) continue;
+      return withSources(text, extractGroundedCitations(json));
+    } catch (err) {
+      console.error(`Gemini grounded request error (model=${model}):`, err.message);
+      return null;
+    }
+  }
+
+  return null;
 }
 
 // ── Generate a clean conversation title (Claude/ChatGPT-style) ───────────────
@@ -420,20 +647,41 @@ async function chat(userId, message, conversationId = null) {
       conversationId = conversation.id;
     }
 
-    // 2. Store user message
-    await AIMessage.create({ conversationId, role: "user", content: message });
+    // 2. Store user message. Count rough tokens for conversation-size limits.
+    await AIMessage.create({
+      conversationId,
+      role: "user",
+      content: message,
+      totalTokens: estimateTokens(message),
+    });
 
-    // 3. Load recent history for context
+    // 3. Load history and build a bounded memory window for Gemini.
     const allMessages = await AIMessage.findByConversationId(conversationId);
-    const recentHistory = allMessages.slice(-10);
-    const geminiHistory = recentHistory.slice(0, -1).map(m => ({
-      role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: m.content }],
-    }));
+    const totalConversationTokens = conversationTokenEstimate(allMessages);
+
+    if (totalConversationTokens >= AI_CONFIG.maxConversationTokens) {
+      const responseText = buildConversationLimitMessage(totalConversationTokens, allMessages.length);
+      const assistantMsg = await AIMessage.create({
+        conversationId,
+        role: "assistant",
+        content: responseText,
+        totalTokens: estimateTokens(responseText),
+      });
+
+      return {
+        conversationId,
+        messageId: assistantMsg.id,
+        content: responseText,
+        contextLimitReached: true,
+      };
+    }
+
+    const memory = buildGeminiHistory(allMessages);
+    const geminiHistory = memory.history;
 
     let responseText = "";
 
-    // 4. Route: greeting → general knowledge → personal data
+    // 4. Route: greeting -> general/live knowledge -> personal finance data
     if (isGreeting(message)) {
       // ── Greeting / small talk: warm reply, no tools ──────────────────────
       const prompt = `The user sent: "${message}"
@@ -454,19 +702,22 @@ Do NOT show any financial data or scores.`;
         responseText = greetings[Math.floor(Math.random() * greetings.length)];
       }
 
-    } else if (isGeneralKnowledge(message)) {
-      // ── General knowledge: answer directly with Gemini, no tools ────────────
+    } else if (!isPersonalDataQuery(message) || isGeneralKnowledge(message)) {
+      // ── General/live knowledge: grounded Gemini search, no financial tools ──
       const prompt = `USER QUESTION: "${message}"
 
-This is a general financial knowledge question — not about the user's personal account data.
-Answer as an expert Indian financial advisor. Be specific, practical, and relevant to Indian markets.
-Use ₹, Indian market context (NSE/BSE, Indian MFs, Indian tax laws).
-Format with markdown. Keep it under 250 words.`;
+This is NOT a request about the user's personal saved financial profile.
+Use Google Search grounding for live/current facts when helpful.
+Answer the exact question directly and accurately.
+If the question is about finance, markets, tax, or investing, prefer Indian context unless the user names another country.
+If sources conflict or the answer cannot be verified, say so clearly.
+Keep the answer concise, practical, and under 300 words unless the user asks for detail.`;
 
-      responseText = await callGemini(prompt, geminiHistory);
+      responseText = await callGeminiGrounded(prompt);
+      if (!responseText) responseText = await callGemini(prompt, geminiHistory);
 
       if (!responseText) {
-        responseText = `I'd be happy to help with that! For the most current market data and stock recommendations, check:\n\n• **NSE India** — nseindia.com\n• **BSE India** — bseindia.com\n• **Screener.in** — for stock analysis\n• **Value Research** — for mutual fund ratings\n\nFor personalised advice based on *your* financial situation, ask me about your portfolio, budget, goals, or health score!`;
+        responseText = "I could not verify live information right now because Gemini/Search is unavailable. Please try again in a moment, or ask a question that does not need current data.";
       }
 
     } else {
@@ -500,8 +751,16 @@ Format with markdown. Keep it under 250 words.`;
         .map(({ toolName, result }) => `### ${toolName}:\n${JSON.stringify(result, null, 2)}`)
         .join("\n\n");
 
+      const continuityInstruction = `CONVERSATION CONTEXT:
+- This is message ${allMessages.length} in the current chat.
+- Recent conversation turns and a compact older summary have been provided through chat history.
+- Do not repeat the same answer structure from previous turns unless the user asks for a recap.
+- If the latest question depends on earlier context, use the history. If not, answer the latest question directly.`;
+
       const prompt = isComprehensive
         ? `USER QUESTION: "${message}"
+
+${continuityInstruction}
 
 COMPLETE FINANCIAL PICTURE (net worth, budget, investments, loans, goals, risk profile, health score):
 ${dataContext}
@@ -515,6 +774,8 @@ INSTRUCTIONS:
 - Use markdown with headers/tables where it aids clarity, but prioritise clear reasoning and specific, actionable next steps.
 - Be precise and concise — aim for under 300 words, more only if the question genuinely needs depth.`
         : `USER QUESTION: "${message}"
+
+${continuityInstruction}
 
 USER'S REAL FINANCIAL DATA:
 ${dataContext}
@@ -540,12 +801,14 @@ INSTRUCTIONS:
         }
       }
 
+      responseText = appendContextWarning(responseText, totalConversationTokens);
+
       const assistantMsg = await AIMessage.create({
         conversationId,
         role: "assistant",
         content: responseText,
         toolCalls: toolResults.map(t => ({ name: t.toolName, params: t.params, result: t.result })),
-        totalTokens: Math.floor(responseText.length / 4),
+        totalTokens: estimateTokens(responseText),
       });
 
       return {
@@ -553,21 +816,33 @@ INSTRUCTIONS:
         messageId: assistantMsg.id,
         content: responseText,
         toolCalls: toolResults.map(t => ({ name: t.toolName })),
+        memory: {
+          usedHistoryMessages: memory.selectedCount,
+          omittedHistoryMessages: memory.omittedCount,
+          contextLimitReached: false,
+        },
       };
     }
 
     // For greeting / general knowledge — no tool calls
+    responseText = appendContextWarning(responseText, totalConversationTokens);
+
     const assistantMsg = await AIMessage.create({
       conversationId,
       role: "assistant",
       content: responseText,
-      totalTokens: Math.floor(responseText.length / 4),
+      totalTokens: estimateTokens(responseText),
     });
 
     return {
       conversationId,
       messageId: assistantMsg.id,
       content: responseText,
+      memory: {
+        usedHistoryMessages: memory.selectedCount,
+        omittedHistoryMessages: memory.omittedCount,
+        contextLimitReached: false,
+      },
     };
 
   } catch (err) {

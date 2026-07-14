@@ -4,10 +4,11 @@ import {
   Send, X, MessageSquare,
   Activity, Target, Umbrella, TrendingUp, CreditCard, Calculator,
   Zap, PiggyBank, ChevronDown, Trash2, Plus, AlertCircle,
-  Moon, Sun, Settings, User, ChevronRight, Check,
+  Moon, Sun, Settings, User, ChevronRight,
   Volume2, VolumeX, Globe, Sliders, LogOut, Menu,
 } from "lucide-react";
 import { aiAPI, type AIMessage, type AIConversation } from "../services/aiService";
+import { useTheme as useAppTheme } from "../ThemeContext";
 
 // ── Brand mark ──────────────────────────────────────────────────────────────
 // Rupee glyph + three ascending dots (growth). Renders crisp from 12px
@@ -264,11 +265,16 @@ function ThinkingIndicator() {
   );
 }
 
-// ── Sidebar panel ─────────────────────────────────────────────────────────────
-type SidePanel = "history" | "settings" | "account" | null;
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+// Single column that toggles between icon-only (collapsed, ~52px) and a full
+// list (expanded, ~260px) — matching Claude's actual sidebar, not a permanent
+// icon rail beside a separate popout panel. Starts expanded with the chat
+// list visible by default (no extra click needed to see conversations).
+type SidebarView = "chats" | "settings" | "account";
 
-function Sidebar({ panel, setPanel, convs, activeId, loadConv, delConv, newChat, config, setConfig, userEmail }: {
-  panel: SidePanel; setPanel: (p: SidePanel) => void;
+function Sidebar({ expanded, setExpanded, view, setView, convs, activeId, loadConv, delConv, newChat, config, setConfig, userEmail }: {
+  expanded: boolean; setExpanded: (e: boolean) => void;
+  view: SidebarView; setView: (v: SidebarView) => void;
   convs: AIConversation[]; activeId: string | null;
   loadConv: (id: string) => void; delConv: (id: string, e: React.MouseEvent) => void;
   newChat: () => void; config: AIConfig; setConfig: (c: AIConfig) => void;
@@ -276,220 +282,262 @@ function Sidebar({ panel, setPanel, convs, activeId, loadConv, delConv, newChat,
 }) {
   const { t, theme, toggle } = useTh();
 
-  const navItems = [
-    { id: "history" as SidePanel, icon: MessageSquare, label: "Chats" },
-    { id: "settings" as SidePanel, icon: Settings, label: "Settings" },
-    { id: "account" as SidePanel, icon: User, label: "Account" },
-  ];
-
-  return (
-    <div className="flex h-full" style={{ borderRight: `1px solid ${t.border}` }}>
-      {/* Icon rail */}
-      <div className="w-14 flex flex-col items-center py-3 gap-1 flex-shrink-0"
+  // Collapsed rail: just icon buttons stacked vertically, no list content.
+  if (!expanded) {
+    return (
+      <div className="w-[52px] flex flex-col items-center py-3 gap-1 flex-shrink-0 h-full"
         style={{ backgroundColor: t.bgSidebar, borderRight: `1px solid ${t.border}` }}>
+        <button onClick={() => setExpanded(true)}
+          className="w-9 h-9 rounded-lg flex items-center justify-center mb-2 transition-colors"
+          style={{ color: t.textFaint }}
+          onMouseEnter={e => e.currentTarget.style.backgroundColor = t.bgHover}
+          onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
+          title="Expand sidebar" aria-label="Expand sidebar">
+          <Menu size={17} />
+        </button>
         <button onClick={newChat}
-          className="w-9 h-9 rounded-xl flex items-center justify-center mb-2 transition-all active:scale-95"
+          className="w-9 h-9 rounded-lg flex items-center justify-center mb-2 transition-all active:scale-95"
           style={{ background: `linear-gradient(135deg, ${t.brand}, ${t.brandLight})` }}
-          title="New chat">
+          title="New chat" aria-label="New chat">
           <Plus size={16} className="text-white" />
         </button>
-        {navItems.map(item => (
-          <button key={item.id}
-            onClick={() => setPanel(panel === item.id ? null : item.id)}
-            className="w-9 h-9 rounded-xl flex items-center justify-center transition-all"
-            style={{
-              backgroundColor: panel === item.id ? t.bgHover : "transparent",
-              color: panel === item.id ? t.brand : t.textFaint,
-            }}
-            title={item.label}>
-            <item.icon size={16} />
-          </button>
-        ))}
-        <div className="flex-1" />
-        <button onClick={toggle}
-          className="w-9 h-9 rounded-xl flex items-center justify-center transition-colors"
+        <button onClick={() => { setView("chats"); setExpanded(true); }}
+          className="w-9 h-9 rounded-lg flex items-center justify-center transition-colors"
           style={{ color: t.textFaint }}
-          title="Toggle theme">
-          {theme === "light" ? <Moon size={15} /> : <Sun size={15} />}
+          onMouseEnter={e => e.currentTarget.style.backgroundColor = t.bgHover}
+          onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
+          title="Chats" aria-label="Chats">
+          <MessageSquare size={16} />
+        </button>
+        <div className="flex-1" />
+        <button onClick={() => { setView("settings"); setExpanded(true); }}
+          className="w-9 h-9 rounded-lg flex items-center justify-center transition-colors"
+          style={{ color: t.textFaint }}
+          onMouseEnter={e => e.currentTarget.style.backgroundColor = t.bgHover}
+          onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
+          title="Settings" aria-label="Settings">
+          <Settings size={16} />
+        </button>
+        <button onClick={() => { setView("account"); setExpanded(true); }}
+          className="w-9 h-9 rounded-lg flex items-center justify-center transition-colors mb-1"
+          style={{ color: t.textFaint }}
+          onMouseEnter={e => e.currentTarget.style.backgroundColor = t.bgHover}
+          onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
+          title="Account" aria-label="Account">
+          <User size={16} />
+        </button>
+      </div>
+    );
+  }
+
+  // Expanded: header (logo + collapse button), new-chat row, then the
+  // current view's content filling the rest of the column.
+  return (
+    <div className="w-[260px] flex flex-col flex-shrink-0 h-full"
+      style={{ backgroundColor: t.bgSidebar, borderRight: `1px solid ${t.border}` }}>
+
+      {/* Header */}
+      <div className="flex items-center justify-between px-3 pt-3 pb-2">
+        <div className="flex items-center gap-2 px-1">
+          <Logo size={16} strokeColor={t.brand} />
+          <span className="text-[13px] font-semibold tracking-tight" style={{ color: t.text }}>SmartFinance</span>
+        </div>
+        <button onClick={() => setExpanded(false)}
+          className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors"
+          style={{ color: t.textFaint }}
+          onMouseEnter={e => e.currentTarget.style.backgroundColor = t.bgHover}
+          onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
+          title="Collapse sidebar" aria-label="Collapse sidebar">
+          <Menu size={16} />
         </button>
       </div>
 
-      {/* Expanded panel */}
-      <AnimatePresence>
-        {panel && (
-          <motion.div
-            initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 220, opacity: 1 }}
-            exit={{ width: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: "easeInOut" }}
-            className="overflow-hidden flex-shrink-0 flex flex-col"
-            style={{ backgroundColor: t.bgSidebar }}>
+      {/* New chat */}
+      <div className="px-3 pb-2">
+        <button onClick={newChat}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors"
+          style={{ backgroundColor: t.bgInput, color: t.text }}
+          onMouseEnter={e => e.currentTarget.style.backgroundColor = t.bgHover}
+          onMouseLeave={e => e.currentTarget.style.backgroundColor = t.bgInput}>
+          <Plus size={15} style={{ color: t.brand }} />
+          <span className="text-[13px] font-medium">New chat</span>
+        </button>
+      </div>
 
-            <div className="flex-1 overflow-y-auto min-w-[220px]">
-
-              {/* History */}
-              {panel === "history" && (
-                <div className="p-3">
-                  <p className="text-[10.5px] font-semibold uppercase tracking-widest mb-3 px-1"
-                    style={{ color: t.textFaint }}>Conversations</p>
-                  {convs.length === 0 ? (
-                    <div className="text-center py-8">
-                      <MessageSquare size={24} className="mx-auto mb-2 opacity-30" style={{ color: t.textFaint }} />
-                      <p className="text-[12px]" style={{ color: t.textFaint }}>No conversations yet</p>
-                    </div>
-                  ) : convs.map(c => (
-                    <div key={c.id} onClick={() => loadConv(c.id)}
-                      className="flex items-start gap-2 px-2 py-2 rounded-lg cursor-pointer group mb-0.5 transition-colors"
-                      style={{ backgroundColor: activeId === c.id ? t.bgHover : "transparent" }}>
-                      <MessageSquare size={12} className="flex-shrink-0 mt-0.5" style={{ color: t.textFaint }} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[12.5px] truncate" style={{ color: t.text }}>{c.title}</p>
-                        <p className="text-[10.5px]" style={{ color: t.textFaint }}>
-                          {new Date(c.lastMessageAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
-                        </p>
-                      </div>
-                      <button onClick={e => delConv(c.id, e)}
-                        className="opacity-0 group-hover:opacity-100 p-0.5 rounded transition-all"
-                        style={{ color: t.textFaint }}>
-                        <Trash2 size={11} />
-                      </button>
-                    </div>
-                  ))}
+      {/* View switcher (chats is the default landing view) */}
+      <div className="flex-1 overflow-y-auto px-3">
+        {view === "chats" && (
+          <div className="pb-2">
+            <p className="text-[10.5px] font-semibold uppercase tracking-widest mb-2 px-1 pt-1"
+              style={{ color: t.textFaint }}>Conversations</p>
+            {convs.length === 0 ? (
+              <div className="text-center py-8">
+                <MessageSquare size={24} className="mx-auto mb-2 opacity-30" style={{ color: t.textFaint }} />
+                <p className="text-[12px]" style={{ color: t.textFaint }}>No conversations yet</p>
+              </div>
+            ) : convs.map(c => (
+              <div key={c.id} onClick={() => loadConv(c.id)}
+                className="flex items-start gap-2 px-2 py-2 rounded-lg cursor-pointer group mb-0.5 transition-colors"
+                style={{ backgroundColor: activeId === c.id ? t.bgHover : "transparent" }}>
+                <MessageSquare size={12} className="flex-shrink-0 mt-0.5" style={{ color: t.textFaint }} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[12.5px] truncate" style={{ color: t.text }}>{c.title}</p>
+                  <p className="text-[10.5px]" style={{ color: t.textFaint }}>
+                    {new Date(c.lastMessageAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                  </p>
                 </div>
-              )}
-
-              {/* Settings */}
-              {panel === "settings" && (
-                <div className="p-3">
-                  <p className="text-[10.5px] font-semibold uppercase tracking-widest mb-3 px-1"
-                    style={{ color: t.textFaint }}>Preferences</p>
-
-                  {/* Theme */}
-                  <SettingRow label="Theme" icon={theme === "light" ? Sun : Moon} t={t}>
-                    <ThemeToggle theme={theme} toggle={toggle} t={t} />
-                  </SettingRow>
-
-                  {/* Response length */}
-                  <SettingRow label="Response length" icon={Sliders} t={t}>
-                    <SelectSetting
-                      value={config.responseLength}
-                      options={[
-                        { value: "concise", label: "Concise" },
-                        { value: "balanced", label: "Balanced" },
-                        { value: "detailed", label: "Detailed" },
-                      ]}
-                      onChange={v => setConfig({ ...config, responseLength: v as any })}
-                      t={t}
-                    />
-                  </SettingRow>
-
-                  {/* Font size */}
-                  <SettingRow label="Font size" icon={Sliders} t={t}>
-                    <SelectSetting
-                      value={config.fontSize}
-                      options={[
-                        { value: "sm", label: "Small" },
-                        { value: "md", label: "Medium" },
-                        { value: "lg", label: "Large" },
-                      ]}
-                      onChange={v => setConfig({ ...config, fontSize: v as any })}
-                      t={t}
-                    />
-                  </SettingRow>
-
-                  {/* Language */}
-                  <SettingRow label="Language" icon={Globe} t={t}>
-                    <SelectSetting
-                      value={config.language}
-                      options={[
-                        { value: "en", label: "English" },
-                        { value: "hi", label: "हिन्दी" },
-                        { value: "mr", label: "मराठी" },
-                      ]}
-                      onChange={v => setConfig({ ...config, language: v as any })}
-                      t={t}
-                    />
-                  </SettingRow>
-
-                  {/* Sound */}
-                  <SettingRow label="Sound effects" icon={config.soundEnabled ? Volume2 : VolumeX} t={t}>
-                    <Toggle
-                      value={config.soundEnabled}
-                      onChange={v => setConfig({ ...config, soundEnabled: v })}
-                      t={t}
-                    />
-                  </SettingRow>
-
-                  {/* Auto-scroll */}
-                  <SettingRow label="Auto-scroll" icon={ChevronDown} t={t}>
-                    <Toggle
-                      value={config.autoScroll}
-                      onChange={v => setConfig({ ...config, autoScroll: v })}
-                      t={t}
-                    />
-                  </SettingRow>
-
-                  <div className="mt-4 pt-3" style={{ borderTop: `1px solid ${t.border}` }}>
-                    <button
-                      onClick={() => setConfig(DEFAULT_CONFIG)}
-                      className="w-full text-[12px] py-1.5 rounded-lg transition-colors"
-                      style={{ color: t.textMuted, backgroundColor: t.bgInput }}>
-                      Reset to defaults
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Account */}
-              {panel === "account" && (
-                <div className="p-3">
-                  <p className="text-[10.5px] font-semibold uppercase tracking-widest mb-3 px-1"
-                    style={{ color: t.textFaint }}>Account</p>
-                  <div className="p-3 rounded-xl mb-3" style={{ backgroundColor: t.bgInput, border: `1px solid ${t.border}` }}>
-                    <div className="w-10 h-10 rounded-full flex items-center justify-center mb-2"
-                      style={{ background: `linear-gradient(135deg, ${t.brand}, ${t.brandLight})` }}>
-                      <User size={18} className="text-white" />
-                    </div>
-                    <p className="text-[13px] font-semibold" style={{ color: t.text }}>Gaurav Kumbhare</p>
-                    <p className="text-[11.5px] mt-0.5" style={{ color: t.textFaint }}>{userEmail || "gaurav@smartfinance.app"}</p>
-                    <div className="mt-2 flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: t.brand }} />
-                      <span className="text-[11px]" style={{ color: t.brand }}>Pro plan</span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-0.5">
-                    {[
-                      { label: "Financial Profile", icon: User },
-                      { label: "Billing & Plan", icon: CreditCard },
-                      { label: "Notifications", icon: Activity },
-                    ].map(item => (
-                      <button key={item.label}
-                        className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-left transition-colors"
-                        style={{ color: t.textMuted }}
-                        onMouseEnter={e => e.currentTarget.style.backgroundColor = t.bgHover}
-                        onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
-                        <item.icon size={13} />
-                        <span className="text-[12.5px] flex-1">{item.label}</span>
-                        <ChevronRight size={12} style={{ color: t.textFaint }} />
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="mt-4 pt-3" style={{ borderTop: `1px solid ${t.border}` }}>
-                    <button className="w-full flex items-center gap-2 px-2 py-2 rounded-lg transition-colors text-red-500"
-                      onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(239,68,68,0.08)"}
-                      onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
-                      <LogOut size={13} />
-                      <span className="text-[12.5px]">Sign out</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </motion.div>
+                <button onClick={e => delConv(c.id, e)}
+                  className="opacity-0 group-hover:opacity-100 p-0.5 rounded transition-all"
+                  style={{ color: t.textFaint }}
+                  aria-label="Delete conversation">
+                  <Trash2 size={11} />
+                </button>
+              </div>
+            ))}
+          </div>
         )}
-      </AnimatePresence>
+
+        {view === "settings" && (
+          <div className="pb-3">
+            <p className="text-[10.5px] font-semibold uppercase tracking-widest mb-2 px-1 pt-1"
+              style={{ color: t.textFaint }}>Preferences</p>
+
+            <SettingRow label="Theme" icon={theme === "light" ? Sun : Moon} t={t}>
+              <ThemeToggle theme={theme} toggle={toggle} t={t} />
+            </SettingRow>
+
+            <SettingRow label="Response length" icon={Sliders} t={t}>
+              <SelectSetting
+                value={config.responseLength}
+                options={[
+                  { value: "concise", label: "Concise" },
+                  { value: "balanced", label: "Balanced" },
+                  { value: "detailed", label: "Detailed" },
+                ]}
+                onChange={v => setConfig({ ...config, responseLength: v as any })}
+                t={t}
+              />
+            </SettingRow>
+
+            <SettingRow label="Font size" icon={Sliders} t={t}>
+              <SelectSetting
+                value={config.fontSize}
+                options={[
+                  { value: "sm", label: "Small" },
+                  { value: "md", label: "Medium" },
+                  { value: "lg", label: "Large" },
+                ]}
+                onChange={v => setConfig({ ...config, fontSize: v as any })}
+                t={t}
+              />
+            </SettingRow>
+
+            <SettingRow label="Language" icon={Globe} t={t}>
+              <SelectSetting
+                value={config.language}
+                options={[
+                  { value: "en", label: "English" },
+                  { value: "hi", label: "हिन्दी" },
+                  { value: "mr", label: "मराठी" },
+                ]}
+                onChange={v => setConfig({ ...config, language: v as any })}
+                t={t}
+              />
+            </SettingRow>
+
+            <SettingRow label="Sound effects" icon={config.soundEnabled ? Volume2 : VolumeX} t={t}>
+              <Toggle
+                value={config.soundEnabled}
+                onChange={v => setConfig({ ...config, soundEnabled: v })}
+                t={t}
+              />
+            </SettingRow>
+
+            <SettingRow label="Auto-scroll" icon={ChevronDown} t={t}>
+              <Toggle
+                value={config.autoScroll}
+                onChange={v => setConfig({ ...config, autoScroll: v })}
+                t={t}
+              />
+            </SettingRow>
+
+            <div className="mt-4 pt-3" style={{ borderTop: `1px solid ${t.border}` }}>
+              <button
+                onClick={() => setConfig(DEFAULT_CONFIG)}
+                className="w-full text-[12px] py-1.5 rounded-lg transition-colors"
+                style={{ color: t.textMuted, backgroundColor: t.bgInput }}>
+                Reset to defaults
+              </button>
+            </div>
+          </div>
+        )}
+
+        {view === "account" && (
+          <div className="pb-3">
+            <p className="text-[10.5px] font-semibold uppercase tracking-widest mb-2 px-1 pt-1"
+              style={{ color: t.textFaint }}>Account</p>
+            <div className="p-3 rounded-xl mb-3" style={{ backgroundColor: t.bgInput, border: `1px solid ${t.border}` }}>
+              <div className="w-10 h-10 rounded-full flex items-center justify-center mb-2"
+                style={{ background: `linear-gradient(135deg, ${t.brand}, ${t.brandLight})` }}>
+                <User size={18} className="text-white" />
+              </div>
+              <p className="text-[13px] font-semibold" style={{ color: t.text }}>Gaurav Kumbhare</p>
+              <p className="text-[11.5px] mt-0.5" style={{ color: t.textFaint }}>{userEmail || "gaurav@smartfinance.app"}</p>
+              <div className="mt-2 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: t.brand }} />
+                <span className="text-[11px]" style={{ color: t.brand }}>Pro plan</span>
+              </div>
+            </div>
+
+            <div className="space-y-0.5">
+              {[
+                { label: "Financial Profile", icon: User },
+                { label: "Billing & Plan", icon: CreditCard },
+                { label: "Notifications", icon: Activity },
+              ].map(item => (
+                <button key={item.label}
+                  className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-left transition-colors"
+                  style={{ color: t.textMuted }}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = t.bgHover}
+                  onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+                  <item.icon size={13} />
+                  <span className="text-[12.5px] flex-1">{item.label}</span>
+                  <ChevronRight size={12} style={{ color: t.textFaint }} />
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-4 pt-3" style={{ borderTop: `1px solid ${t.border}` }}>
+              <button className="w-full flex items-center gap-2 px-2 py-2 rounded-lg transition-colors text-red-500"
+                onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(239,68,68,0.08)"}
+                onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+                <LogOut size={13} />
+                <span className="text-[12.5px]">Sign out</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom nav — switch view without leaving expanded mode */}
+      <div className="flex items-center gap-1 px-3 py-2" style={{ borderTop: `1px solid ${t.borderSubtle}` }}>
+        {([
+          { id: "chats" as SidebarView, icon: MessageSquare, label: "Chats" },
+          { id: "settings" as SidebarView, icon: Settings, label: "Settings" },
+          { id: "account" as SidebarView, icon: User, label: "Account" },
+        ]).map(item => (
+          <button key={item.id} onClick={() => setView(item.id)}
+            className="flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-lg transition-colors"
+            style={{
+              backgroundColor: view === item.id ? t.bgHover : "transparent",
+              color: view === item.id ? t.brand : t.textFaint,
+            }}
+            title={item.label} aria-label={item.label}>
+            <item.icon size={15} />
+            <span className="text-[9.5px]">{item.label}</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -599,7 +647,8 @@ function AIAssistantInner({ inline = false }: Props) {
   const [input, setInput]       = useState("");
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState<string | null>(null);
-  const [sidePanel, setSidePanel] = useState<SidePanel>(null);
+  const [sidebarExpanded, setSidebarExpanded] = useState(true);
+  const [sidebarView, setSidebarView] = useState<SidebarView>("chats");
   const [config, setConfig]     = useState<AIConfig>(DEFAULT_CONFIG);
 
   const endRef     = useRef<HTMLDivElement>(null);
@@ -659,7 +708,6 @@ function AIAssistantInner({ inline = false }: Props) {
 
   async function loadConv(id: string) {
     setActiveId(id);
-    setSidePanel(null);
     setError(null);
     try {
       const res = await aiAPI.getConversation(id);
@@ -674,7 +722,6 @@ function AIAssistantInner({ inline = false }: Props) {
     if (!msg || loadingRef.current) return;
     setError(null);
     setLoading(true);
-    setSidePanel(null);
     userScrolledUpRef.current = false; // sending a message always snaps back to bottom
 
     // If this is a retry of a failed message, remove the old failed bubble
@@ -765,7 +812,8 @@ function AIAssistantInner({ inline = false }: Props) {
       <div className="flex flex-1 min-h-0">
         {/* Sidebar */}
         <Sidebar
-          panel={sidePanel} setPanel={setSidePanel}
+          expanded={sidebarExpanded} setExpanded={setSidebarExpanded}
+          view={sidebarView} setView={setSidebarView}
           convs={convs} activeId={activeId}
           loadConv={loadConv} delConv={delConv} newChat={newChat}
           config={config} setConfig={setConfig}
@@ -977,15 +1025,9 @@ function AIAssistantInner({ inline = false }: Props) {
 
 // ── Wrap with theme provider ──────────────────────────────────────────────────
 export function AIAssistant({ inline = false }: Props) {
-  const [theme, setTheme] = useState<Theme>(() => {
-    try { return (localStorage.getItem("sf-theme") as Theme) || "light"; } catch { return "light"; }
-  });
-
-  const toggle = () => setTheme(prev => {
-    const next = prev === "light" ? "dark" : "light";
-    try { localStorage.setItem("sf-theme", next); } catch {}
-    return next;
-  });
+  const { resolvedTheme, setPreference } = useAppTheme();
+  const theme: Theme = resolvedTheme;
+  const toggle = () => setPreference(resolvedTheme === "dark" ? "light" : "dark");
 
   return (
     <ThemeCtx.Provider value={{ theme, t: THEMES[theme], toggle }}>
