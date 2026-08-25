@@ -1,23 +1,30 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+let genAI = null;
+function getGenAI() {
+  if (!genAI && process.env.GEMINI_API_KEY) {
+    genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  }
+  return genAI;
+}
+
+const DEFAULT_CHAT_MODEL = "gemini-1.5-flash";
 
 // Pass systemInstruction so Gemini treats it as a system prompt, not a user message
 // modelName allows callers to override the default model (used for fallback on overload)
 function getModel(systemInstruction, modelName) {
-  return genAI.getGenerativeModel({
-    model: modelName || process.env.GEMINI_MODEL_CHAT || "gemini-3.5-flash",
-    generationConfig: {
-      temperature: 0.35,
-      topP: 0.8,
-      topK: 32,
-    },
+  const ai = getGenAI();
+  if (!ai) return null;
+  return ai.getGenerativeModel({
+    model: modelName || process.env.GEMINI_MODEL_CHAT || DEFAULT_CHAT_MODEL,
     ...(systemInstruction ? { systemInstruction } : {}),
   });
 }
 
 function getEmbeddingModel() {
-  return genAI.getGenerativeModel({ model: "text-embedding-004" });
+  const ai = getGenAI();
+  if (!ai) return null;
+  return ai.getGenerativeModel({ model: "text-embedding-004" });
 }
 
 async function generateEmbedding(text) {
@@ -26,6 +33,10 @@ async function generateEmbedding(text) {
   }
 
   const embeddingModel = getEmbeddingModel();
+  if (!embeddingModel) {
+    throw new Error("GEMINI_API_KEY is not configured for embeddings.");
+  }
+
   const result = await embeddingModel.embedContent({
     content: { parts: [{ text }] },
   });
@@ -37,4 +48,4 @@ async function generateEmbedding(text) {
   return result.embedding.values;
 }
 
-module.exports = { getModel, getEmbeddingModel, generateEmbedding };
+module.exports = { getModel, getEmbeddingModel, generateEmbedding, DEFAULT_CHAT_MODEL };

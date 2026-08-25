@@ -4,16 +4,13 @@ import {
   Send, X, MessageSquare,
   Activity, Target, Umbrella, TrendingUp, CreditCard, Calculator,
   Zap, PiggyBank, ChevronDown, Trash2, Plus, AlertCircle,
-  Moon, Sun, Settings, User, ChevronRight,
+  Moon, Sun, Settings, User, ChevronRight, ArrowRight,
   Volume2, VolumeX, Globe, Sliders, LogOut, Menu,
 } from "lucide-react";
 import { aiAPI, type AIMessage, type AIConversation } from "../services/aiService";
 import { useTheme as useAppTheme } from "../ThemeContext";
 
 // ── Brand mark ──────────────────────────────────────────────────────────────
-// Rupee glyph + three ascending dots (growth). Renders crisp from 12px
-// (inline avatars) up to 24px (welcome screen) — pure stroke/fill, no
-// detail that disappears at small sizes.
 function Logo({ size = 16, strokeColor = "#FFFFFF" }: { size?: number; strokeColor?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -30,8 +27,6 @@ function Logo({ size = 16, strokeColor = "#FFFFFF" }: { size?: number; strokeCol
   );
 }
 
-// Local extension — adds an optional `failed` flag for messages whose send
-// request errored, without needing to modify the shared AIMessage type.
 type ChatMessage = AIMessage & { failed?: boolean };
 
 // ── Theme system ──────────────────────────────────────────────────────────────
@@ -122,20 +117,74 @@ const DEFAULT_CONFIG: AIConfig = {
 
 // ── Quick actions ─────────────────────────────────────────────────────────────
 const QUICK_ACTIONS = [
-  { icon: Activity,   label: "Health Score",  message: "What is my financial health score?" },
-  { icon: PiggyBank,  label: "Budget",        message: "Analyse my monthly budget" },
-  { icon: Target,     label: "Goals",         message: "Am I on track for my financial goals?" },
-  { icon: Umbrella,   label: "Retirement",    message: "Will I have enough for retirement?" },
-  { icon: TrendingUp, label: "Investments",   message: "How is my investment portfolio doing?" },
-  { icon: CreditCard, label: "Loans & EMIs",  message: "Summarise my loans and EMIs" },
-  { icon: Calculator, label: "Tax Planning",  message: "Show my tax planning summary" },
-  { icon: Zap,        label: "What-If",       message: "Run a what-if scenario for my finances" },
-  { icon: TrendingUp, label: "Wealth Forecast", message: "What will my wealth be in 10 years?" },
+  { icon: Activity,   label: "Health Score",    message: "What is my financial health score?" },
+  { icon: Target,     label: "1 Cr in 10 Yrs",   message: "How to reach 1 Cr in 10 years at 12%?" },
+  { icon: PiggyBank,  label: "50/30/20 Budget", message: "50 30 20 budget for ₹80,000 salary" },
+  { icon: Calculator, label: "Tax Regimes",     message: "New vs Old tax regime comparison" },
+  { icon: Zap,        label: "SGB vs Gold",     message: "SGB vs physical gold" },
+  { icon: TrendingUp, label: "SIP vs Lumpsum",  message: "SIP vs Lumpsum investment" },
+  { icon: Umbrella,   label: "FIRE / 4% Rule",  message: "Explain FIRE movement and 4% rule" },
+  { icon: CreditCard, label: "Debt Avalanche",  message: "Debt Avalanche vs Debt Snowball" },
+  { icon: TrendingUp, label: "Investments",     message: "How is my investment portfolio doing?" },
 ];
 
 // ── Markdown renderer ─────────────────────────────────────────────────────────
+function normalizeMarkdownTables(raw: string): string {
+  const lines = raw.split(/\r?\n/);
+  const normalized: string[] = [];
+  let tableHeaders: string[] | null = null;
+
+  const parseRow = (line: string) => {
+    const trimmed = line.trim();
+    const parts = trimmed.split("|");
+    if (parts[0].trim() === "") parts.shift();
+    if (parts[parts.length - 1]?.trim() === "") parts.pop();
+    return parts.map(cell => cell.trim().replace(/\*\*/g, ""));
+  };
+
+  const isTableRow = (line: string) => /^\s*\|.*\|?\s*$/.test(line);
+  const isSeparator = (line: string) => /^\s*\|[\s\-:|]+(?:\|\s*)?$/.test(line);
+  const isLabelValueHeader = (cells: string[]) =>
+    cells.length === 2 && (!cells[0] || /^(amount|value)$/i.test(cells[1] || ""));
+
+  for (const line of lines) {
+    if (!isTableRow(line)) {
+      tableHeaders = null;
+      normalized.push(line);
+      continue;
+    }
+
+    if (isSeparator(line)) continue;
+
+    const cells = parseRow(line);
+    if (!cells.some(Boolean)) continue;
+
+    if (isLabelValueHeader(cells)) {
+      tableHeaders = cells;
+      continue;
+    }
+
+    if (!tableHeaders && cells.length > 2) {
+      tableHeaders = cells;
+      continue;
+    }
+
+    if (cells.length === 2) {
+      normalized.push(`**${cells[0]}:** ${cells[1] || ""}`);
+      continue;
+    }
+
+    normalized.push(cells
+      .map((cell, index) => tableHeaders?.[index] ? `**${tableHeaders[index]}:** ${cell}` : cell)
+      .filter(Boolean)
+      .join(" · "));
+  }
+
+  return normalized.join("\n");
+}
+
 function md(raw: string, t: ThemeTokens): string {
-  let s = raw
+  let s = normalizeMarkdownTables(raw)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
@@ -150,19 +199,7 @@ function md(raw: string, t: ThemeTokens): string {
     `<p style="color:${t.textMuted}" class="text-[13px] font-semibold mt-2 mb-0.5 uppercase tracking-widest">$1</p>`);
   s = s.replace(/\*\*(.+?)\*\*/g, `<strong style="color:${t.text}" class="font-semibold">$1</strong>`);
   s = s.replace(/\*(.+?)\*/g, `<em class="italic">$1</em>`);
-  s = s.replace(/(\|.+\|\r?\n)+/g, (block) => {
-    const lines = block.trim().split(/\r?\n/).filter(l => !/^\|[-| :]+\|$/.test(l));
-    if (!lines.length) return block;
-    const row = (line: string, tag: string, hStyle: string, dStyle: string) =>
-      `<tr>${line.split("|").slice(1, -1).map((c, i) =>
-        `<${tag} style="${tag === "th" ? hStyle : dStyle}">${c.trim()}</${tag}>`).join("")}</tr>`;
-    const [hdr, ...rows] = lines;
-    return `<div style="border:1px solid ${t.border}" class="overflow-x-auto my-2.5 rounded-xl shadow-sm">
-      <table class="w-full" style="background:${t.bgPanel}">
-        <thead style="background:${t.bgInput}">${row(hdr, "th", `color:${t.textFaint};padding:8px 12px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em`, "")}</thead>
-        <tbody>${rows.map(r => row(r, "td", "", `color:${t.text};padding:8px 12px;font-size:13.5px;border-top:1px solid ${t.border}`)).join("")}</tbody>
-      </table></div>`;
-  });
+  s = s.replace(/^\s*\|\s*([^|\n]+?)\s*\|\s*([^|\n]+?)\s*\|?\s*$/gm, "**$1:** $2");
   s = s.replace(/^[•\-\*] (.+)$/gm,
     `<li style="color:${t.textMuted}" class="ml-5 list-disc text-[13.5px] my-0.5">$1</li>`);
   s = s.replace(/^\d+\. (.+)$/gm,
@@ -174,7 +211,7 @@ function md(raw: string, t: ThemeTokens): string {
   return s;
 }
 
-// ── Animated message IDs (never re-animate) ───────────────────────────────────
+// ── Animated message IDs ──────────────────────────────────────────────────────
 const animatedIds = new Set<string>();
 
 // ── Typewriter + caret ────────────────────────────────────────────────────────
@@ -200,10 +237,6 @@ function MsgContent({ text, isUser, msgId, fontSize, onStream }: {
     const step = () => {
       indexRef.current += 1;
       setDisplay(chunks.slice(0, indexRef.current).join(""));
-      // BUG FIX (auto-scroll): the typewriter grows the message's height on
-      // every chunk, long after the parent's [messages] effect already fired
-      // once. Without re-triggering scroll here, the bottom of a streaming
-      // reply runs past the visible area and auto-scroll silently stalls.
       onStream?.();
       if (indexRef.current < chunks.length) {
         timerRef.current = setTimeout(step, chunks.length > 150 ? 6 : 14);
@@ -266,10 +299,6 @@ function ThinkingIndicator() {
 }
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
-// Single column that toggles between icon-only (collapsed, ~52px) and a full
-// list (expanded, ~260px) — matching Claude's actual sidebar, not a permanent
-// icon rail beside a separate popout panel. Starts expanded with the chat
-// list visible by default (no extra click needed to see conversations).
 type SidebarView = "chats" | "settings" | "account";
 
 function Sidebar({ expanded, setExpanded, view, setView, convs, activeId, loadConv, delConv, newChat, config, setConfig, userEmail }: {
@@ -282,7 +311,6 @@ function Sidebar({ expanded, setExpanded, view, setView, convs, activeId, loadCo
 }) {
   const { t, theme, toggle } = useTh();
 
-  // Collapsed rail: just icon buttons stacked vertically, no list content.
   if (!expanded) {
     return (
       <div className="w-[52px] flex flex-col items-center py-3 gap-1 flex-shrink-0 h-full"
@@ -330,8 +358,6 @@ function Sidebar({ expanded, setExpanded, view, setView, convs, activeId, loadCo
     );
   }
 
-  // Expanded: header (logo + collapse button), new-chat row, then the
-  // current view's content filling the rest of the column.
   return (
     <div className="w-[260px] flex flex-col flex-shrink-0 h-full"
       style={{ backgroundColor: t.bgSidebar, borderRight: `1px solid ${t.border}` }}>
@@ -364,7 +390,7 @@ function Sidebar({ expanded, setExpanded, view, setView, convs, activeId, loadCo
         </button>
       </div>
 
-      {/* View switcher (chats is the default landing view) */}
+      {/* View switcher */}
       <div className="flex-1 overflow-y-auto px-3">
         {view === "chats" && (
           <div className="pb-2">
@@ -519,7 +545,7 @@ function Sidebar({ expanded, setExpanded, view, setView, convs, activeId, loadCo
         )}
       </div>
 
-      {/* Bottom nav — switch view without leaving expanded mode */}
+      {/* Bottom nav */}
       <div className="flex items-center gap-1 px-3 py-2" style={{ borderTop: `1px solid ${t.borderSubtle}` }}>
         {([
           { id: "chats" as SidebarView, icon: MessageSquare, label: "Chats" },
@@ -644,12 +670,26 @@ function AIAssistantInner({ inline = false }: Props) {
   const [convs, setConvs]       = useState<AIConversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [input, setInput]       = useState("");
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState<string | null>(null);
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [sidebarView, setSidebarView] = useState<SidebarView>("chats");
   const [config, setConfig]     = useState<AIConfig>(DEFAULT_CONFIG);
+  const [showWelcomePopup, setShowWelcomePopup] = useState(false);
+
+  useEffect(() => {
+    if (!inline && !open) {
+      const dismissed = typeof sessionStorage !== "undefined" ? sessionStorage.getItem("sf_ai_popup_dismissed") : null;
+      if (!dismissed) {
+        const timer = setTimeout(() => setShowWelcomePopup(true), 1200);
+        return () => clearTimeout(timer);
+      }
+    } else {
+      setShowWelcomePopup(false);
+    }
+  }, [inline, open]);
 
   const endRef     = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -662,20 +702,12 @@ function AIAssistantInner({ inline = false }: Props) {
   loadingRef.current  = loading;
   autoScrollRef.current = config.autoScroll;
 
-  // Stable scroll fn — called once per new message AND on every streamed
-  // chunk (via MsgContent's onStream), so the view tracks growing content
-  // instead of snapping once and falling behind.
-  // Skips if the user has manually scrolled up to re-read earlier text —
-  // otherwise a streaming reply yanks them back down on every word.
   function scrollToBottom(smooth = true) {
     if (!autoScrollRef.current) return;
     if (userScrolledUpRef.current) return;
     endRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto" });
   }
 
-  // Track whether the user is near the bottom of the scroll container.
-  // A new user-sent message always resets this (they expect to see their
-  // own message + the reply), but during streaming we respect their scroll.
   function handleScroll() {
     const el = scrollContainerRef.current;
     if (!el) return;
@@ -691,7 +723,6 @@ function AIAssistantInner({ inline = false }: Props) {
     scrollToBottom();
   }, [messages, loading]);
 
-  // Auto-resize textarea
   useEffect(() => {
     const el = inputRef.current;
     if (!el) return;
@@ -709,6 +740,7 @@ function AIAssistantInner({ inline = false }: Props) {
   async function loadConv(id: string) {
     setActiveId(id);
     setError(null);
+    setSuggestions([]);
     try {
       const res = await aiAPI.getConversation(id);
       setMessages(res.data.messages || []);
@@ -722,10 +754,8 @@ function AIAssistantInner({ inline = false }: Props) {
     if (!msg || loadingRef.current) return;
     setError(null);
     setLoading(true);
-    userScrolledUpRef.current = false; // sending a message always snaps back to bottom
+    userScrolledUpRef.current = false;
 
-    // If this is a retry of a failed message, remove the old failed bubble
-    // first so we don't end up with two copies of the same message.
     if (retryId) setMessages(prev => prev.filter(m => m.id !== retryId));
 
     const tempId = `tmp-${Date.now()}`;
@@ -733,25 +763,21 @@ function AIAssistantInner({ inline = false }: Props) {
       id: tempId, role: "user" as const, content: msg,
       createdAt: new Date().toISOString(),
     }]);
-    // Clear the composer only after the message is committed to the thread —
-    // if the request fails below we restore it instead of losing the draft.
     setInput("");
 
     try {
       const res = await aiAPI.chat(msg, activeIdRef.current || undefined);
-      const { conversationId, messageId, content } = res.data;
+      const { conversationId, messageId, content, suggestions: dynamicSuggestions } = res.data;
       if (!activeIdRef.current) { setActiveId(conversationId); fetchConvs(); }
+      if (dynamicSuggestions && dynamicSuggestions.length) {
+        setSuggestions(dynamicSuggestions);
+      }
       setMessages(prev => [
         ...prev.filter(m => m.id !== tempId),
         { id: `u-${messageId}`, role: "user" as const,     content: msg, createdAt: new Date().toISOString() },
         { id: messageId,        role: "assistant" as const, content,      createdAt: new Date().toISOString() },
       ]);
     } catch (e: any) {
-      // BUG FIX: previously this deleted the user's just-sent message AND the
-      // input was already cleared, so a failed send (bad network, server
-      // hiccup) silently erased what the user typed with no way to retry.
-      // Now: keep the message visible, mark it failed, restore the draft so
-      // they can edit/resend without retyping from scratch.
       setMessages(prev => prev.map(m => m.id === tempId ? { ...m, failed: true } : m));
       setInput(msg);
       setError(
@@ -770,6 +796,7 @@ function AIAssistantInner({ inline = false }: Props) {
   function newChat() {
     setActiveId(null);
     setMessages([]);
+    setSuggestions([]);
     setError(null);
     setInput("");
     inputRef.current?.focus();
@@ -780,13 +807,13 @@ function AIAssistantInner({ inline = false }: Props) {
     try {
       await aiAPI.deleteConversation(id);
       setConvs(prev => prev.filter(c => c.id !== id));
-      if (activeId === id) { setActiveId(null); setMessages([]); }
+      if (activeId === id) { setActiveId(null); setMessages([]); setSuggestions([]); }
     } catch (err: any) { setError(err.message); }
   }
 
   const panelCls = inline
     ? "w-full flex flex-col overflow-hidden rounded-2xl"
-    : "fixed inset-0 z-50 flex flex-col overflow-hidden"; // always full-screen, ChatGPT-style
+    : "fixed inset-0 z-50 flex flex-col overflow-hidden";
 
   const panel = (
     <div className={panelCls}
@@ -797,11 +824,6 @@ function AIAssistantInner({ inline = false }: Props) {
         fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
       }}>
 
-      {/* Fonts + keyframes.
-          Inter = UI sans (headers, labels, buttons) — closest free match to
-          Claude's Styrene. Source Serif 4 = assistant message body text —
-          closest free match to Claude's Tiempos. Scoped to .sf-serif so the
-          rest of the UI (buttons, labels, sidebar) stays on the sans. */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500&display=swap');
         @keyframes sfCaret { 0%,49%{opacity:1} 50%,100%{opacity:0} }
@@ -871,7 +893,6 @@ function AIAssistantInner({ inline = false }: Props) {
                   transition={{ duration: 0.2, ease: "easeOut" }}>
 
                   {msg.role === "user" ? (
-                    /* User message — right-aligned, subtle tinted background, no bubble shape */
                     <div className="flex justify-end">
                       <div className="max-w-[75%]">
                         <p className="text-[10.5px] text-right mb-1 uppercase tracking-widest" style={{ color: t.textFaint }}>You</p>
@@ -893,7 +914,6 @@ function AIAssistantInner({ inline = false }: Props) {
                       </div>
                     </div>
                   ) : (
-                    /* Assistant message — full width, no bubble, just text with avatar */
                     <div className="flex gap-3">
                       <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm"
                         style={{ background: `linear-gradient(135deg, ${t.brand}, ${t.brandLight})` }}>
@@ -926,20 +946,33 @@ function AIAssistantInner({ inline = false }: Props) {
             </div>
           )}
 
-          {/* Topic chips when mid-conversation */}
+          {/* Dynamic contextual suggestions or Quick Actions when mid-conversation */}
           {messages.length > 0 && !loading && (
             <div className="flex-shrink-0 px-4 py-2 overflow-x-auto flex gap-2"
               style={{ borderTop: `1px solid ${t.borderSubtle}`, backgroundColor: t.bgPanel }}>
-              {QUICK_ACTIONS.slice(0, 6).map(qa => (
-                <button key={qa.label} type="button" onClick={() => send(qa.message)} disabled={loading}
-                  className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11.5px] font-medium border transition-all disabled:opacity-40"
-                  style={{ color: t.textMuted, borderColor: t.border, backgroundColor: t.bgInput }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = t.brand; e.currentTarget.style.color = t.brand; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = t.border; e.currentTarget.style.color = t.textMuted; }}>
-                  <qa.icon size={11} />
-                  {qa.label}
-                </button>
-              ))}
+              {suggestions.length > 0 ? (
+                suggestions.map(s => (
+                  <button key={s} type="button" onClick={() => send(s)} disabled={loading}
+                    className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11.5px] font-medium border transition-all disabled:opacity-40 shadow-xs"
+                    style={{ color: t.brand, borderColor: t.brand, backgroundColor: t.bgHover }}
+                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = t.bgHover; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = t.brand; }}>
+                    <Zap size={11} className="text-amber-500" />
+                    {s}
+                  </button>
+                ))
+              ) : (
+                QUICK_ACTIONS.slice(0, 6).map(qa => (
+                  <button key={qa.label} type="button" onClick={() => send(qa.message)} disabled={loading}
+                    className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11.5px] font-medium border transition-all disabled:opacity-40"
+                    style={{ color: t.textMuted, borderColor: t.border, backgroundColor: t.bgInput }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = t.brand; e.currentTarget.style.color = t.brand; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = t.border; e.currentTarget.style.color = t.textMuted; }}>
+                    <qa.icon size={11} />
+                    {qa.label}
+                  </button>
+                ))
+              )}
             </div>
           )}
 
@@ -1007,17 +1040,108 @@ function AIAssistantInner({ inline = false }: Props) {
         )}
       </AnimatePresence>
 
-      {/* FAB hidden while the full-screen panel is open — no reason to show
-          an "open chat" bubble floating on top of the chat that's already open. */}
       {!open && (
-        <motion.button onClick={() => { setOpen(true); setError(null); }}
-          whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }}
-          initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }}
-          className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full text-white shadow-xl flex items-center justify-center"
-          style={{ background: `linear-gradient(135deg, ${t.brand}, ${t.brandLight})` }}
-          aria-label="Open AI assistant">
-          <Logo size={22} />
-        </motion.button>
+        <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end pointer-events-none">
+          {/* Welcome Callout Popup */}
+          <AnimatePresence>
+            {showWelcomePopup && (
+              <motion.div
+                initial={{ opacity: 0, y: 15, scale: 0.92 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 10, scale: 0.92 }}
+                transition={{ duration: 0.25, ease: "easeOut" }}
+                className="pointer-events-auto mb-3 max-w-[320px] sm:max-w-[340px] rounded-2xl p-4 shadow-2xl border backdrop-blur-md relative"
+                style={{
+                  backgroundColor: t.bgPanel,
+                  borderColor: `${t.brand}40`,
+                  boxShadow: `0 20px 35px -10px rgba(0,0,0,0.35), 0 0 20px ${t.brand}25`,
+                }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowWelcomePopup(false);
+                    if (typeof sessionStorage !== "undefined") sessionStorage.setItem("sf_ai_popup_dismissed", "true");
+                  }}
+                  className="absolute top-2.5 right-2.5 w-6 h-6 rounded-full flex items-center justify-center transition-colors text-muted-foreground hover:text-foreground"
+                  style={{ backgroundColor: t.bgHover }}
+                  aria-label="Dismiss">
+                  <X size={13} />
+                </button>
+
+                <div className="flex items-start gap-3">
+                  <div
+                    className="w-8 h-8 rounded-xl flex items-center justify-center text-white flex-shrink-0 shadow-md"
+                    style={{ background: `linear-gradient(135deg, ${t.brand}, ${t.brandLight})` }}>
+                    <Logo size={16} />
+                  </div>
+                  <div className="flex-1 min-w-0 pr-4">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full text-emerald-500 bg-emerald-500/10 border border-emerald-500/20">
+                        AI Wealth Assistant
+                      </span>
+                    </div>
+                    <h4 className="text-[13.5px] font-bold leading-tight" style={{ color: t.text }}>
+                      Need quick financial help?
+                    </h4>
+                    <p className="text-[11.5px] mt-1 leading-normal" style={{ color: t.textMuted }}>
+                      Ask me for <strong>live stock quotes</strong>, <strong>tax regimes</strong>, <strong>SIP math</strong>, or your net worth!
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-3 pt-2.5 border-t flex items-center justify-between gap-2" style={{ borderColor: t.borderSubtle }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowWelcomePopup(false);
+                      setOpen(true);
+                      setTimeout(() => {
+                        send("price of sbi stock today ?");
+                      }, 120);
+                    }}
+                    className="text-[11px] font-medium px-2.5 py-1 rounded-lg border transition-all text-left truncate flex items-center gap-1 hover:opacity-85"
+                    style={{ borderColor: t.border, color: t.brand, backgroundColor: t.bgHover }}>
+                    <Zap size={11} className="text-amber-500 flex-shrink-0" />
+                    <span>SBI stock price?</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowWelcomePopup(false);
+                      setOpen(true);
+                    }}
+                    className="text-[11.5px] font-semibold px-3 py-1.5 rounded-xl text-white shadow-xs flex items-center gap-1 transition-all active:scale-95 flex-shrink-0"
+                    style={{ background: `linear-gradient(135deg, ${t.brand}, ${t.brandLight})` }}>
+                    <span>Chat Now</span>
+                    <ArrowRight size={12} />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Glowing Floating Button */}
+          <div className="relative pointer-events-auto">
+            <span
+              className="absolute -inset-1 rounded-full opacity-60 blur-xs animate-pulse"
+              style={{ background: `linear-gradient(135deg, ${t.brand}, ${t.brandLight})` }}
+            />
+            <motion.button
+              onClick={() => {
+                setOpen(true);
+                setShowWelcomePopup(false);
+                setError(null);
+              }}
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.93 }}
+              className="relative w-14 h-14 rounded-full text-white shadow-xl flex items-center justify-center"
+              style={{ background: `linear-gradient(135deg, ${t.brand}, ${t.brandLight})` }}
+              aria-label="Open AI assistant">
+              <Logo size={22} />
+            </motion.button>
+          </div>
+        </div>
       )}
     </>
   );

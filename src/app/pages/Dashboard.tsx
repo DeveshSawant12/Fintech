@@ -4,7 +4,7 @@ import {
   Home, TrendingUp, Calculator, FileText, Video, Settings, LogOut,
   Menu, X, Wallet, ArrowUpRight, ArrowDownRight, User, Bell,
   Shield, Target, AlertTriangle, CheckCircle, Info, ChevronRight,
-  Newspaper, Play, Sparkles,
+  Newspaper, Play, Sparkles, Zap,
 } from "lucide-react";
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
@@ -104,6 +104,7 @@ function GoalBar({ name, icon, current, target, year }: {
         <span>{fmt(current)}</span>
         <span>{fmt(target)}</span>
       </div>
+
     </div>
   );
 }
@@ -119,7 +120,7 @@ function fmt(n: number) {
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 export function Dashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [activeTab, setActiveTab]     = useState<"overview"|"profile"|"goals"|"insights">("overview");
+  const [activeTab, setActiveTab]     = useState<"overview"|"profile"|"goals"|"insights"|"ai-chat">("overview");
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -238,6 +239,8 @@ export function Dashboard() {
               <nav className="space-y-1">
                 <SidebarLink icon={<Home className="w-4 h-4" />} label="Overview"
                   active={activeTab === "overview"} onClick={() => setActiveTab("overview")} />
+                <SidebarLink icon={<Sparkles className="w-4 h-4 text-emerald-400" />} label="AI Advisor"
+                  active={activeTab === "ai-chat"} onClick={() => setActiveTab("ai-chat")} />
                 <SidebarLink icon={<User className="w-4 h-4" />} label="My Profile"
                   active={activeTab === "profile"} onClick={() => setActiveTab("profile")} />
                 <SidebarLink icon={<Target className="w-4 h-4" />} label="Goals"
@@ -245,7 +248,6 @@ export function Dashboard() {
                 <SidebarLink icon={<Bell className="w-4 h-4" />} label="Insights"
                   active={activeTab === "insights"} onClick={() => setActiveTab("insights")} />
                 <div className="h-px bg-border my-2" />
-                <SidebarLink icon={<Sparkles className="w-4 h-4" />} label="AI Assistant" to="/ai/chat" />
                 <SidebarLink icon={<TrendingUp className="w-4 h-4" />} label="Investments" to="/services" />
                 <SidebarLink icon={<Calculator className="w-4 h-4" />} label="Calculators" to="/calculator/sip" />
                 <SidebarLink icon={<FileText className="w-4 h-4" />} label="Planner" to="/planner" />
@@ -276,7 +278,7 @@ export function Dashboard() {
               </button>
               <div>
                 <h1 className="text-lg font-bold text-foreground">
-                  {activeTab === "overview" ? "Dashboard" : activeTab === "profile" ? "My Profile" : activeTab === "goals" ? "Financial Goals" : "Smart Insights"}
+                  {activeTab === "overview" ? "Dashboard" : activeTab === "ai-chat" ? "AI Wealth Advisor" : activeTab === "profile" ? "My Profile" : activeTab === "goals" ? "Financial Goals" : "Smart Insights"}
                 </h1>
                 <p className="text-xs text-muted-foreground">Welcome back, {displayName.split(" ")[0]}!</p>
               </div>
@@ -296,12 +298,13 @@ export function Dashboard() {
           </div>
           {/* Tab bar */}
           <div className="flex gap-0 border-t border-border px-4 sm:px-6 overflow-x-auto">
-            {(["overview","profile","goals","insights"] as const).map(t => (
+            {(["overview", "ai-chat", "profile", "goals", "insights"] as const).map(t => (
               <button key={t} onClick={() => setActiveTab(t)}
                 className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${
                   activeTab === t ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
                 }`}>
-                {t.charAt(0).toUpperCase() + t.slice(1)}
+                {t === "ai-chat" && <Sparkles className="w-3 h-3 text-emerald-500 inline mr-1" />}
+                {t === "ai-chat" ? "AI Advisor" : t.charAt(0).toUpperCase() + t.slice(1)}
               </button>
             ))}
           </div>
@@ -480,6 +483,31 @@ export function Dashboard() {
                     </div>
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* ════ TAB: AI ADVISOR ════ */}
+          {activeTab === "ai-chat" && (
+            <div className="space-y-4 max-w-6xl mx-auto">
+              <div className="bg-card rounded-2xl p-5 border border-border shadow-xs flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-emerald-500" />
+                    SmartFinance AI Wealth Advisor
+                  </h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Ask anything: real-time stock prices (SBI, Reliance, Nifty), reverse SIP math, tax regime recommendations, or net worth analytics.
+                  </p>
+                </div>
+                <div className="hidden sm:flex items-center gap-2">
+                  <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-500 border border-emerald-500/30">
+                    🟢 Live Market Feeds & Offline Brain
+                  </span>
+                </div>
+              </div>
+              <div className="rounded-2xl border border-border overflow-hidden shadow-sm">
+                <AIAssistant inline />
               </div>
             </div>
           )}

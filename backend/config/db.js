@@ -1,4 +1,4 @@
-require("dotenv").config();
+require("./env").loadEnv();
 const { Pool } = require("pg");
 
 // ── Pool configuration ────────────────────────────────────────────────────────
@@ -27,8 +27,9 @@ const pool = new Pool(poolConfig);
 // ── Test connection ───────────────────────────────────────────────────────────
 pool.connect((err, client, release) => {
   if (err) {
-    console.error("❌ PostgreSQL connection failed:", err.message);
-    console.error("   Check your .env DATABASE_URL or DB_* variables.");
+    const errorDetail = err.message || err.code || (err.errors && err.errors[0]?.message) || JSON.stringify(err);
+    console.error("❌ PostgreSQL connection failed:", errorDetail);
+    console.error("   Check if PostgreSQL is running and check your .env DATABASE_URL / DB_* credentials.");
     process.exit(1);
   }
   release();
